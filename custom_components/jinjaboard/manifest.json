@@ -1,0 +1,20 @@
+{
+    "domain": "jinjaboard",
+    "name": "JinjaBoard",
+    "codeowners": [
+        "@romrider"
+    ],
+    "config_flow": true,
+    "dependencies": [
+        "frontend",
+        "http",
+        "lovelace",
+        "websocket_api"
+    ],
+    "documentation": "https://github.com/romrider/jinjaboard",
+    "integration_type": "service",
+    "iot_class": "calculated",
+    "issue_tracker": "https://github.com/romrider/jinjaboard/issues",
+    "single_config_entry": true,
+    "version": "0.0.0"
+}
