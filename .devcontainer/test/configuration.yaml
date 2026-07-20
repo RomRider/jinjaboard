@@ -1,0 +1,10 @@
+default_config:
+
+demo:
+
+debugpy:
+  start: true
+  wait: false
+
+logger:
+  default: warning

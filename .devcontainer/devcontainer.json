@@ -1,0 +1,70 @@
+{
+  "name": "Home Assistant Custom Integration Advanced Cover Development Env",
+  "image": "romrider/hass-custom-devcontainer:latest",
+  "runArgs": ["--env-file", "${localWorkspaceFolder}/.devcontainer/test/.env"],
+  "appPort": [
+    "${localEnv:HA_PORT:8123}:8123",
+    "${localEnv:HA_DEBUGPY:5678}:5678"
+  ],
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/config/www/workspace,type=bind",
+    "source=${localWorkspaceFolder}/.devcontainer/test,target=/config/test,type=bind",
+    "source=${localWorkspaceFolder}/.devcontainer/test/configuration.yaml,target=/config/configuration.yaml,type=bind",
+    "source=${localWorkspaceFolder}/custom_components/jinjaboard,target=/config/custom_components/jinjaboard,type=bind",
+    "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
+    "source=ha-storage-${devcontainerId},target=/config/.storage,type=volume"
+  ],
+  "postStartCommand": "bash .devcontainer/persist-claude.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "github.vscode-pull-request-github",
+        "eamodio.gitlens",
+        "dbaeumer.vscode-eslint",
+        "redhat.vscode-yaml",
+        "yzhang.markdown-all-in-one",
+        "esbenp.prettier-vscode",
+        "runem.lit-plugin",
+        "cschleiden.vscode-github-actions",
+        "samuelcolvin.jinjahtml",
+        "rvest.vs-code-prettier-eslint",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "files.eol": "\n",
+        "editor.tabSize": 2,
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "editor.formatOnPaste": false,
+        "editor.formatOnSave": true,
+        "editor.formatOnType": true,
+        "files.trimTrailingWhitespace": true,
+        "markdown.extension.toc.githubCompatibility": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "files.watcherExclude": {
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/node_modules/**": true,
+          "**/.hg/store/**": true,
+          "**/.rpt2_cache/**": true,
+          "docs/public/**": true
+        },
+        "markdown.extension.tableFormatter.enabled": false,
+        "files.associations": {
+          "docs/**/*.html": "jinja-html"
+        },
+        "yaml.schemas": {
+          "https://squidfunk.github.io/mkdocs-material/schema.json": "mkdocs.yml"
+        },
+        "yaml.customTags": [
+          "!ENV scalar",
+          "!ENV sequence",
+          "!relative scalar",
+          "tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg",
+          "tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji",
+          "tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format",
+          "tag:yaml.org,2002:python/object/apply:pymdownx.slugs.slugify mapping"
+        ]
+      }
+    }
+  }
+}

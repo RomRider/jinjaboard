@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next version
+        id: version
+        uses: paulhatch/semantic-version@v6.0.2
+        with:
+          tag_prefix: "v"
+          # Conventional Commits: "feat:" bumps minor, "fix:"/anything else
+          # bumps patch, a "!" before the colon or a "BREAKING CHANGE:"
+          # footer bumps major.
+          major_pattern: '/^\w+(\(.+\))?!:/'
+          major_regexp_flags: ""
+          minor_pattern: '/^feat(\(.+\))?:/'
+          version_format: "${major}.${minor}.${patch}"
+
+      - name: Update manifest.json version
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'EOF'
+          import json
+          import os
+
+          path = "custom_components/advanced_cover/manifest.json"
+          with open(path) as f:
+              data = json.load(f)
+          data["version"] = os.environ["NEW_VERSION"]
+          with open(path, "w") as f:
+              json.dump(data, f, indent=4)
+              f.write("\n")
+          EOF
+
+      - name: Generate release notes
+        env:
+          PREVIOUS_COMMIT: ${{ steps.version.outputs.previous_commit }}
+          PREVIOUS_VERSION: ${{ steps.version.outputs.previous_version }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import os
+          import re
+          import subprocess
+
+          previous_commit = os.environ["PREVIOUS_COMMIT"]
+          previous_version = os.environ["PREVIOUS_VERSION"]
+          new_version = os.environ["NEW_VERSION"]
+          repository = os.environ["REPOSITORY"]
+
+          commit_range = f"{previous_commit}..HEAD" if previous_commit else "HEAD"
+          raw_commits = subprocess.run(
+              ["git", "log", commit_range, "--no-merges", "--pretty=format:%H%x1f%s"],
+              capture_output=True, text=True, check=True,
+          ).stdout.splitlines()
+          commits = [line.partition("\x1f")[::2] for line in raw_commits if line]
+
+          PR_SUFFIX = re.compile(r"\s*\(#(\d+)\)\s*$")
+
+          def commit_link(sha, subject):
+              pr_match = PR_SUFFIX.search(subject)
+              if pr_match:
+                  pr_number = pr_match.group(1)
+                  stripped_subject = subject[: pr_match.start()]
+                  link = f"[#{pr_number}](https://github.com/{repository}/pull/{pr_number})"
+              else:
+                  stripped_subject = subject
+                  link = f"[{sha[:7]}](https://github.com/{repository}/commit/{sha})"
+              return stripped_subject, link
+
+          SECTION_ORDER = [
+              "breaking", "feat", "fix", "perf", "refactor", "docs", "chore", "other",
+          ]
+          SECTION_TITLES = {
+              "breaking": "💥 Breaking Changes",
+              "feat": "🚀 Features",
+              "fix": "🐛 Bug Fixes",
+              "perf": "⚡ Performance",
+              "refactor": "♻️ Refactoring",
+              "docs": "📝 Documentation",
+              "chore": "🧹 Chores",
+              "other": "Other Changes",
+          }
+          CHORE_LIKE = {"chore", "build", "ci", "style", "test"}
+
+          sections = {key: [] for key in SECTION_ORDER}
+          pattern = re.compile(r"^(\w+)(\(([^)]+)\))?(!)?:\s*(.+)$")
+
+          for sha, subject in commits:
+              subject = subject.strip()
+              if not subject or re.match(r"^chore\(release\):", subject):
+                  continue
+
+              subject, link = commit_link(sha, subject)
+
+              match = pattern.match(subject)
+              if not match:
+                  sections["other"].append(f"- {subject} ({link})")
+                  continue
+
+              commit_type, _, scope, breaking, description = match.groups()
+              bullet = (
+                  f"- **{scope}:** {description} ({link})"
+                  if scope
+                  else f"- {description} ({link})"
+              )
+
+              if breaking:
+                  sections["breaking"].append(bullet)
+
+              commit_type = commit_type.lower()
+              if commit_type == "feat":
+                  sections["feat"].append(bullet)
+              elif commit_type == "fix":
+                  sections["fix"].append(bullet)
+              elif commit_type == "perf":
+                  sections["perf"].append(bullet)
+              elif commit_type == "refactor":
+                  sections["refactor"].append(bullet)
+              elif commit_type == "docs":
+                  sections["docs"].append(bullet)
+              elif commit_type in CHORE_LIKE:
+                  sections["chore"].append(bullet)
+              elif not breaking:
+                  sections["other"].append(bullet)
+
+          lines = []
+          for key in SECTION_ORDER:
+              if not sections[key]:
+                  continue
+              lines.append(f"## {SECTION_TITLES[key]}")
+              lines.extend(sections[key])
+              lines.append("")
+
+          if previous_version:
+              lines.append(
+                  f"**Full Changelog**: https://github.com/{repository}/compare/"
+                  f"v{previous_version}...v{new_version}"
+              )
+          else:
+              lines.append(
+                  f"**Full Changelog**: https://github.com/{repository}/commits/v{new_version}"
+              )
+
+          with open("release_notes.md", "w") as f:
+              f.write("\n".join(lines) + "\n")
+          EOF
+
+      - name: Commit and push version bump
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/advanced_cover/manifest.json
+          git commit -m "chore(release): v${NEW_VERSION}"
+          git push
+
+      - name: Tag the release commit
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git tag "v${NEW_VERSION}"
+          git push origin "v${NEW_VERSION}"
+
+      - name: Zip the advanced_cover component
+        # HACS zip-release convention: the asset must be named
+        # <domain>.zip with the component's files at the zip root
+        # (not nested in an advanced_cover/ folder).
+        run: |
+          cd custom_components/advanced_cover
+          zip -r "${GITHUB_WORKSPACE}/advanced_cover.zip" . -x '__pycache__/*'
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v${NEW_VERSION}" \
+            advanced_cover.zip \
+            --title "v${NEW_VERSION}" \
+            --notes-file release_notes.md
