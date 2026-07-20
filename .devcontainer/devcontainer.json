@@ -1,5 +1,5 @@
 {
-  "name": "Home Assistant Custom Integration Advanced Cover Development Env",
+  "name": "Home Assistant Custom Integration JinjaBoard Development Env",
   "image": "romrider/hass-custom-devcontainer:latest",
   "runArgs": ["--env-file", "${localWorkspaceFolder}/.devcontainer/test/.env"],
   "appPort": [

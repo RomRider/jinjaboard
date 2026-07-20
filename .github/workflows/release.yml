@@ -35,7 +35,7 @@ jobs:
           import json
           import os
 
-          path = "custom_components/advanced_cover/manifest.json"
+          path = "custom_components/jinjaboard/manifest.json"
           with open(path) as f:
               data = json.load(f)
           data["version"] = os.environ["NEW_VERSION"]
@@ -165,7 +165,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add custom_components/advanced_cover/manifest.json
+          git add custom_components/jinjaboard/manifest.json
           git commit -m "chore(release): v${NEW_VERSION}"
           git push
 
@@ -176,13 +176,13 @@ jobs:
           git tag "v${NEW_VERSION}"
           git push origin "v${NEW_VERSION}"
 
-      - name: Zip the advanced_cover component
+      - name: Zip the jinjaboard component
         # HACS zip-release convention: the asset must be named
         # <domain>.zip with the component's files at the zip root
-        # (not nested in an advanced_cover/ folder).
+        # (not nested in an jinjaboard/ folder).
         run: |
-          cd custom_components/advanced_cover
-          zip -r "${GITHUB_WORKSPACE}/advanced_cover.zip" . -x '__pycache__/*'
+          cd custom_components/jinjaboard
+          zip -r "${GITHUB_WORKSPACE}/jinjaboard.zip" . -x '__pycache__/*'
 
       - name: Create GitHub release
         env:
@@ -190,6 +190,6 @@ jobs:
           NEW_VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release create "v${NEW_VERSION}" \
-            advanced_cover.zip \
+            jinjaboard.zip \
             --title "v${NEW_VERSION}" \
             --notes-file release_notes.md
