@@ -1,4 +1,11 @@
 {
+    "entity": {
+        "sensor": {
+            "render_signal": {
+                "name": "Jinjaboard render signal"
+            }
+        }
+    },
     "config": {
         "step": {
             "user": {

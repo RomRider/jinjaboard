@@ -1,4 +1,4 @@
-import { createStrategyGenerate, errorCard } from "./strategy-common";
+import { createStrategyGenerate, errorCard, shouldRegenerateJinjaboard } from "./strategy-common";
 import type { JinjaboardWsError } from "./types";
 
 /**
@@ -11,6 +11,7 @@ import type { JinjaboardWsError } from "./types";
  */
 class LlStrategyDashboardJinjaboard extends HTMLElement {
   static generate = createStrategyGenerate(errorDashboard);
+  static shouldRegenerate = shouldRegenerateJinjaboard;
 }
 
 // Full error-code-aware rendering lands in error-panel.ts (M6); this is a

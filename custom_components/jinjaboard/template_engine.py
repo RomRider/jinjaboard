@@ -12,6 +12,7 @@ from jinja2.utils import Namespace
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
+from homeassistant.helpers.event import TrackTemplate
 from homeassistant.helpers.template import Template
 from homeassistant.util.async_ import run_callback_threadsafe
 
@@ -131,6 +132,7 @@ def _render_jinja(
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
+    track_templates: list[TrackTemplate] | None = None,
 ) -> str:
     """Render `source` through Jinja, safe to call from any thread.
 
@@ -145,9 +147,14 @@ def _render_jinja(
     `run_callback_threadsafe` only when actually off the loop. Tests call
     `render_template` directly on the loop thread (no executor job), so
     they take the direct branch, unchanged.
+
+    `track_templates`, when given, collects a `TrackTemplate` for this file
+    — see `_render_jinja_on_loop`'s docstring.
     """
     if threading.get_ident() == hass.loop_thread_id:
-        return _render_jinja_on_loop(hass, source, global_vars, inc_vars, macro_vars)
+        return _render_jinja_on_loop(
+            hass, source, global_vars, inc_vars, macro_vars, track_templates
+        )
     return run_callback_threadsafe(
         hass.loop,
         _render_jinja_on_loop,
@@ -156,6 +163,7 @@ def _render_jinja(
         global_vars,
         inc_vars,
         macro_vars,
+        track_templates,
     ).result()
 
 
@@ -165,6 +173,7 @@ def _render_jinja_on_loop(
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
+    track_templates: list[TrackTemplate] | None = None,
 ) -> str:
     """Render `source` through Jinja only, returning the raw rendered string.
 
@@ -207,20 +216,29 @@ def _render_jinja_on_loop(
     `source` has whole-line YAML comments blanked out first (see
     `_blank_out_comment_lines`) so a commented-out line's `{{ }}`/`{% %}`
     doesn't raise for code the author meant to disable.
+
+    `track_templates`, when given (used only by `jinjaboard/subscribe_render`
+    — see `websocket.py`), collects a `homeassistant.helpers.event.
+    TrackTemplate(template, render_vars)` for this file, appended to the
+    same shared list every file in the whole render tree appends to (unlike
+    `include_stack`, which is deliberately copied-and-extended per recursion
+    branch for cycle detection, this accumulator is one flat list covering
+    the entire tree regardless of branch structure). The caller later hands
+    that list to `homeassistant.helpers.event.async_track_template_result`
+    to get notified when any file's actual template dependencies change.
     """
     template = Template(_blank_out_comment_lines(source), hass)
-    try:
-        return template.async_render(
-            {
-                "jjb": Namespace(
-                    globals=Namespace(global_vars or {}),
-                    inc=Namespace(inc_vars or {}),
-                    macros=Namespace(macro_vars or {}),
-                )
-            },
-            parse_result=False,
-            strict=True,
+    render_vars = {
+        "jjb": Namespace(
+            globals=Namespace(global_vars or {}),
+            inc=Namespace(inc_vars or {}),
+            macros=Namespace(macro_vars or {}),
         )
+    }
+    if track_templates is not None:
+        track_templates.append(TrackTemplate(template, render_vars))
+    try:
+        return template.async_render(render_vars, parse_result=False, strict=True)
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
 
@@ -290,6 +308,7 @@ def _render_and_parse(
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
     include_stack: list[Path],
+    track_templates: list[TrackTemplate] | None = None,
 ) -> Any:
     """Render `source` (already read from `path`) and parse it as YAML.
 
@@ -303,9 +322,12 @@ def _render_and_parse(
     tree is walked — see `includes.py`'s `_render_included_file` for how
     it's layered. `macro_vars` (the dashboard's own `macros:`, see
     `macros.py`) is likewise constant for the whole tree, built once by
-    `render_template` before any include is walked.
+    `render_template` before any include is walked. `track_templates` is
+    forwarded unchanged to every recursive call and to `parse_with_includes`
+    (which threads it into each included file's own `_render_and_parse`
+    call) — see `_render_jinja_on_loop`'s docstring.
     """
-    raw = _render_jinja(hass, source, global_vars, inc_vars, macro_vars)
+    raw = _render_jinja(hass, source, global_vars, inc_vars, macro_vars, track_templates)
     try:
         return parse_with_includes(
             hass,
@@ -316,6 +338,7 @@ def _render_and_parse(
             macro_vars,
             include_stack,
             _render_and_parse,
+            track_templates,
         )
     except yaml.YAMLError as err:
         raise JinjaboardYamlError(raw) from err
@@ -327,6 +350,7 @@ def render_template(
     source: str,
     global_vars: dict[str, Any] | None = None,
     macro_paths: list[str] | None = None,
+    track_templates: list[TrackTemplate] | None = None,
 ) -> Any:
     """Render `source` (the file at `path`) as YAML with embedded Jinja.
 
@@ -346,8 +370,25 @@ def render_template(
     `macro_paths` (the dashboard's own `macros:`) is resolved once, up front,
     into `jjb.macros` (see `macros.build_macro_namespace`) — unlike
     `jjb.inc`, it never changes as the include tree is walked.
+
+    `track_templates`, when given, is populated with one `TrackTemplate` per
+    file rendered anywhere in the tree (root and every `!include`), for
+    `jinjaboard/subscribe_render` (see `websocket.py`) to hand to
+    `homeassistant.helpers.event.async_track_template_result`. Defaults to
+    `None` (don't collect) — `jinjaboard/render`'s one-shot path never passes
+    this, so its behavior is unchanged. Macro files are deliberately not
+    included: a macro's `states()`/`is_state()` calls execute inline within
+    whichever file's Jinja evaluation invokes them, so `RenderInfo`'s
+    contextvar-based tracking already attributes them to that calling file.
     """
     macro_vars = build_macro_namespace(hass, macro_paths, global_vars, _compile_macro_module)
     return _render_and_parse(
-        hass, path, source, global_vars, None, macro_vars, include_stack=[path.resolve()]
+        hass,
+        path,
+        source,
+        global_vars,
+        None,
+        macro_vars,
+        include_stack=[path.resolve()],
+        track_templates=track_templates,
     )

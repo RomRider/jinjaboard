@@ -1,0 +1,4 @@
+strategy:
+  type: custom:jinjaboard
+  template: test/jinjaboard/auto_update_test.yaml.j2
+  auto_update: true

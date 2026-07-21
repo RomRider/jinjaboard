@@ -15,6 +15,8 @@ import pytest
 
 from homeassistant.core import HomeAssistant
 
+from homeassistant.helpers.event import TrackTemplate
+
 from custom_components.jinjaboard.errors import (
     JinjaboardTemplateError,
     JinjaboardYamlError,
@@ -218,3 +220,37 @@ def test_trailing_inline_comment_is_left_untouched(
     )
     result = render_template(hass, path, path.read_text())
     assert result == {"value": 1}
+
+
+def test_track_templates_defaults_to_none_and_changes_nothing(
+    hass: HomeAssistant, write_template
+) -> None:
+    """`track_templates` is strictly additive/optional — omitting it (the
+    `jinjaboard/render` one-shot command never passes it) must render
+    identically to before this parameter existed."""
+    path = write_template(
+        "home.yaml.j2", "views:\n  - title: \"{{ 'Jinja' + 'Board' }}\"\n"
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"views": [{"title": "JinjaBoard"}]}
+
+
+def test_track_templates_collects_one_entry_for_root_only(
+    hass: HomeAssistant, write_template
+) -> None:
+    path = write_template("home.yaml.j2", "value: \"{{ states('light.x') }}\"\n")
+    tracked: list[TrackTemplate] = []
+    render_template(hass, path, path.read_text(), track_templates=tracked)
+    assert len(tracked) == 1
+    assert isinstance(tracked[0], TrackTemplate)
+    assert "jjb" in tracked[0].variables
+
+
+def test_track_templates_collects_one_entry_per_file_in_the_include_tree(
+    hass: HomeAssistant, write_template
+) -> None:
+    path = write_template("root.yaml.j2", "value: !include included.yaml.j2\n")
+    write_template("included.yaml.j2", "\"{{ states('light.x') }}\"\n")
+    tracked: list[TrackTemplate] = []
+    render_template(hass, path, path.read_text(), track_templates=tracked)
+    assert len(tracked) == 2

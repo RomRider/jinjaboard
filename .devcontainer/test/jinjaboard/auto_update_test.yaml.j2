@@ -1,0 +1,42 @@
+views:
+  - title: Auto Update Test
+    cards:
+      - type: markdown
+        content: "Rendered at **{{ now().strftime('%H:%M:%S.%f') }}**"
+
+      - type: markdown
+        content: |
+          ## Lights
+          {% for entity_id in ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.living_room_rgbww_lights', 'light.office_rgbw_lights', 'light.entrance_color_white_lights'] %}
+          - **{{ state_attr(entity_id, 'friendly_name') }}**: {{ states(entity_id) }}
+          {% endfor %}
+
+          **{{ ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.living_room_rgbww_lights', 'light.office_rgbw_lights', 'light.entrance_color_white_lights'] | select('is_state', 'on') | list | count }}** of 6 lights are on.
+
+      - type: markdown
+        content: |
+          ## Switches
+          {% for entity_id in ['switch.ac', 'switch.decorative_lights'] %}
+          - **{{ state_attr(entity_id, 'friendly_name') }}**: {{ states(entity_id) }}
+          {% endfor %}
+
+      - type: markdown
+        content: |
+          ## Climate
+          {% for entity_id in ['climate.ecobee', 'climate.heatpump', 'climate.hvac'] %}
+          - **{{ state_attr(entity_id, 'friendly_name') }}**: {{ states(entity_id) }} ({{ state_attr(entity_id, 'temperature') }}°)
+          {% endfor %}
+
+      - type: markdown
+        content: |
+          ## Locks & covers
+          {% for entity_id in ['lock.front_door', 'lock.kitchen_door', 'cover.garage_door', 'cover.kitchen_window'] %}
+          - **{{ state_attr(entity_id, 'friendly_name') }}**: {{ states(entity_id) }}
+          {% endfor %}
+
+      - type: markdown
+        content: |
+          ## Sensors
+          {% for entity_id in ['sensor.outside_temperature', 'sensor.outside_humidity', 'sensor.power_consumption'] %}
+          - **{{ state_attr(entity_id, 'friendly_name') }}**: {{ states(entity_id) }} {{ state_attr(entity_id, 'unit_of_measurement') or '' }}
+          {% endfor %}
