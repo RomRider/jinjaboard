@@ -149,7 +149,7 @@ def parse_with_includes(
 
     `current_dir` is the directory of the file `text` came from — `!include`
     targets inside it resolve relative to this directory, matching real HA.
-    `global_vars` (the dashboard's `variables:`, exposed as `jjb.globals`) is
+    `global_vars` (the dashboard's `globals:`, exposed as `jjb.globals`) is
     carried through unchanged; `inc_vars` (exposed as `jjb.inc`) is what a
     nested `!include ... vars:` layers on top of, in `_render_included_file`
     below.

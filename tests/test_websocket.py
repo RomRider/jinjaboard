@@ -18,7 +18,7 @@ async def test_render_success(
     assert response["result"] == {"views": [{"title": "JinjaBoard"}]}
 
 
-async def test_render_passes_variables(
+async def test_render_passes_globals(
     hass: HomeAssistant, config_entry, hass_ws_client, write_template
 ) -> None:
     write_template("greet.yaml.j2", "value: {{ jjb.globals.name }}\n")
@@ -27,7 +27,7 @@ async def test_render_passes_variables(
         {
             "type": "jinjaboard/render",
             "template": "greet.yaml.j2",
-            "variables": {"name": "kitchen"},
+            "globals": {"name": "kitchen"},
         }
     )
     response = await client.receive_json()

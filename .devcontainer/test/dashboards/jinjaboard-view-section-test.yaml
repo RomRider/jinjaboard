@@ -7,7 +7,7 @@ views:
     strategy:
       type: custom:jinjaboard
       template: test/jinjaboard/view_test.yaml.j2
-      variables:
+      globals:
         rooms:
           - name: Living Room
             temperature: 22
@@ -24,7 +24,7 @@ views:
         strategy:
           type: custom:jinjaboard
           template: test/jinjaboard/section_test.yaml.j2
-          variables:
+          globals:
             rooms:
               - name: Kitchen
                 temperature: 19

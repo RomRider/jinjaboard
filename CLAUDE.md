@@ -150,7 +150,7 @@ render as empty) into a raised `TemplateError`, so a typo'd variable name
 surfaces as a `template_error` instead of a silently broken dashboard.
 Three more deliberate departures from the obvious approach, all load-bearing:
 
-- Dashboard-declared `variables` (the strategy's own `variables:`, threaded
+- Dashboard-declared globals (the strategy's own `globals:`, threaded
   through as `global_vars`) are only reachable as `jjb.globals.<name>`, and
   `!include ... vars:` (threaded through as `inc_vars`, inherited/layered by
   `includes.py`'s `_render_included_file` as the include tree is walked) only
@@ -159,7 +159,7 @@ Three more deliberate departures from the obvious approach, all load-bearing:
   as a bare render-context name would let it silently shadow one of HA's own
   template globals (`states`, `now`, `area_id`, ...); merging the two into
   one `jjb.<name>` (the original design) would instead let a per-`!include`
-  `vars:` override silently shadow a dashboard-level `variables:` entry of
+  `vars:` override silently shadow a dashboard-level `globals:` entry of
   the same name — keeping `globals`/`inc` as separate sub-namespaces avoids
   that. `jinja2.utils.Namespace` (not a plain `dict`) is used for `jjb`,
   `jjb.globals`, and `jjb.inc` specifically so a variable named e.g. `items`
@@ -239,8 +239,8 @@ The config flow (`config_flow.py`) is single-instance and field-less —
 `single_config_entry: true` in the manifest enforces exactly one entry, and
 its only purpose is giving `async_setup_entry` a standard trigger to
 register the WS command and the frontend resource. The template path and
-`variables` live entirely in the *dashboard's own YAML*
-(`strategy.template`, `strategy.variables`), read by the frontend strategy
+`globals` live entirely in the *dashboard's own YAML*
+(`strategy.template`, `strategy.globals`), read by the frontend strategy
 element and passed straight through in the WS request. This was a deliberate
 simplification decided mid-project — earlier design notes (in the project
 plan file, not checked into this repo) explored one-config-entry-per-
@@ -250,7 +250,7 @@ create themselves.
 
 ### Strategy config shape: flat, not `options`-wrapped
 
-`src/strategy-dashboard.ts` reads `config.template` / `config.variables`
+`src/strategy-dashboard.ts` reads `config.template` / `config.globals`
 directly off the strategy config — **not** `config.options.template`. This
 is not a stylistic choice: home-assistant-frontend's
 `cleanLegacyStrategyConfig` (in `strategies/legacy-strategy.ts`) treats any
@@ -322,7 +322,7 @@ vars the file that included it had (like Jinja's own `{% include %}` "with
 context"), with an optional mapping form —
 `!include {path: x.yaml.j2, vars: {area_id: kitchen}}` — to layer on
 extra/overriding vars for that one include and everything nested under it.
-The dashboard's own top-level `variables:` (`jjb.globals`) reach every
+The dashboard's own top-level `globals:` (`jjb.globals`) reach every
 included file unchanged regardless of nesting depth — they're threaded
 through as a separate value from `jjb.inc` and never merged with it, so a
 `vars:` override can never shadow a `jjb.globals` entry of the same name.

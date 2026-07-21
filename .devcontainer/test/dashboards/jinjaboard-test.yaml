@@ -1,7 +1,7 @@
 strategy:
   type: custom:jinjaboard
   template: test/jinjaboard/hello.yaml.j2
-  variables:
+  globals:
     rooms:
       - name: Living Room
         temperature: 22

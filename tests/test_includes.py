@@ -75,7 +75,7 @@ def test_include_inherits_dashboard_globals(
     write_template("greeting.yaml.j2", "content: Hello {{ jjb.globals.area_id }}\n")
     root = write_template("root.yaml.j2", "cards:\n  - !include greeting.yaml.j2\n")
     result = render_template(
-        hass, root, root.read_text(), variables={"area_id": "living_room"}
+        hass, root, root.read_text(), global_vars={"area_id": "living_room"}
     )
     assert result == {"cards": [{"content": "Hello living_room"}]}
 

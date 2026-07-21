@@ -93,13 +93,13 @@ with:
 strategy:
   type: custom:jinjaboard
   template: jinjaboard/home.yaml.j2
-  variables:
+  globals:
     some_var: 123
 ```
 
 - `template` is a path to your file, relative to the Home Assistant config
   directory (`/config`).
-- `variables` (optional) are made available in the template under
+- `globals` (optional) are made available in the template under
   `jjb.globals` — `some_var` above is read as `{{ jjb.globals.some_var }}`,
   not `{{ some_var }}`. This keeps your variables from accidentally clashing
   with Home Assistant's own built-in template variables (`states`, `now`,
@@ -121,7 +121,7 @@ views:
     strategy:
       type: custom:jinjaboard
       template: jinjaboard/lights_view.yaml.j2
-      variables:
+      globals:
         some_var: 123
   - title: A normal, non-templated view
     cards:
@@ -152,7 +152,7 @@ views:
         strategy:
           type: custom:jinjaboard
           template: jinjaboard/climate_section.yaml.j2
-          variables:
+          globals:
             some_var: 123
 ```
 
@@ -202,7 +202,7 @@ A few things worth knowing:
 - **Paths are relative to the including file**, not the root template —
   `cards/header.yaml.j2` inside `home.yaml.j2` resolves next to `home.yaml.j2`
   itself, matching real HA's `!include`.
-- **`vars:` are inherited separately from `variables:`.** An included file
+- **`vars:` are inherited separately from `globals:`.** An included file
   automatically sees whatever `vars:` the file that included it can see,
   exposed under `jjb.inc` (not `jjb.globals`). To pass something extra (or
   override a value for just that one include and everything nested under
@@ -222,7 +222,7 @@ A few things worth knowing:
   ```
 
   `cards/light.yaml.j2` reads this as `{{ jjb.inc.area_id }}` — the
-  dashboard's own `variables:` (`jjb.globals`) stay visible alongside it.
+  dashboard's own `globals:` (`jjb.globals`) stay visible alongside it.
 
 - **Directory includes are recursive** and match `*.yaml`, `*.yml`,
   `*.yaml.j2`, and `*.yml.j2` (dotfiles and dot-directories are skipped). A
@@ -262,7 +262,7 @@ If you're coming from `hass-lovelace_gen`, two things work differently:
   file, and `_global` becomes `jjb.globals`.** `lovelace_gen` defines global
   vars once under its own key in `configuration.yaml`, available everywhere
   as `_global.some_var`. JinjaBoard has no equivalent global config — instead,
-  put them under `variables:` in each dashboard's `strategy:` block (see
+  put them under `globals:` in each dashboard's `strategy:` block (see
   [Usage](#2-create-a-dashboard-that-uses-it) above) and read them as
   `jjb.globals.some_var`:
 
@@ -278,13 +278,13 @@ If you're coming from `hass-lovelace_gen`, two things work differently:
   strategy:
     type: custom:jinjaboard
     template: jinjaboard/home.yaml.j2
-    variables:
+    globals:
       some_var: 123
   # template
   {{ jjb.globals.some_var }}
   ```
 
-  If several dashboards need the same variables, repeat the `variables:`
+  If several dashboards need the same variables, repeat the `globals:`
   block in each one, or have each dashboard `!include` a shared file and pass
   the values down via `vars:`.
 

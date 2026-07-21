@@ -55,19 +55,19 @@ describe("ll-strategy-view-jinjaboard", () => {
     expect(result).toBe(wsResult);
   });
 
-  it("forwards template and variables to the WS call", async () => {
+  it("forwards template and globals to the WS call", async () => {
     const callWS = vi.fn().mockResolvedValue({ cards: [] });
     const generate = getGenerate();
 
     await generate(
-      { template: "view.yaml.j2", variables: { area_id: "kitchen" } },
+      { template: "view.yaml.j2", globals: { area_id: "kitchen" } },
       mockHass(callWS),
     );
 
     expect(callWS).toHaveBeenCalledWith({
       type: "jinjaboard/render",
       template: "view.yaml.j2",
-      variables: { area_id: "kitchen" },
+      globals: { area_id: "kitchen" },
     });
   });
 

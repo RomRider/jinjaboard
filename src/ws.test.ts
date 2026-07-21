@@ -17,11 +17,11 @@ describe("renderTemplate", () => {
     expect(callWS).toHaveBeenCalledWith({
       type: "jinjaboard/render",
       template: "home.yaml.j2",
-      variables: { area_id: "kitchen" },
+      globals: { area_id: "kitchen" },
     });
   });
 
-  it("omits variables when none are given", async () => {
+  it("omits globals when none are given", async () => {
     const callWS = vi.fn().mockResolvedValue({ views: [] });
     const hass = mockHass(callWS);
 
@@ -30,7 +30,7 @@ describe("renderTemplate", () => {
     expect(callWS).toHaveBeenCalledWith({
       type: "jinjaboard/render",
       template: "home.yaml.j2",
-      variables: undefined,
+      globals: undefined,
     });
   });
 

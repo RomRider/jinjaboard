@@ -31,21 +31,21 @@ def test_renders_plain_yaml_with_jinja(hass: HomeAssistant, write_template) -> N
     assert result == {"views": [{"title": "JinjaBoard"}]}
 
 
-def test_variables_are_passed_through(hass: HomeAssistant, write_template) -> None:
+def test_globals_are_passed_through(hass: HomeAssistant, write_template) -> None:
     path = write_template("greet.yaml.j2", "value: {{ jjb.globals.name }}\n")
-    result = render_template(hass, path, path.read_text(), variables={"name": "kitchen"})
+    result = render_template(hass, path, path.read_text(), global_vars={"name": "kitchen"})
     assert result == {"value": "kitchen"}
 
 
-def test_variables_are_not_exposed_as_bare_names(
+def test_globals_are_not_exposed_as_bare_names(
     hass: HomeAssistant, write_template
 ) -> None:
-    """`variables` must only be reachable via `jjb.globals.<name>` — a bare
+    """`globals` must only be reachable via `jjb.globals.<name>` — a bare
     top-level name would risk silently shadowing one of HA's own template
     globals, which is exactly what namespacing under `jjb` avoids."""
     path = write_template("greet.yaml.j2", "value: \"{{ name }}\"\n")
     with pytest.raises(JinjaboardTemplateError) as excinfo:
-        render_template(hass, path, path.read_text(), variables={"name": "kitchen"})
+        render_template(hass, path, path.read_text(), global_vars={"name": "kitchen"})
     assert "name" in str(excinfo.value)
 
 
@@ -56,7 +56,7 @@ def test_variable_named_like_a_dict_method_is_not_shadowed(
     `dict.items` — the reason `jjb.globals`/`jjb.inc` are `Namespace`s, not
     plain dicts."""
     path = write_template("greet.yaml.j2", "value: {{ jjb.globals.items }}\n")
-    result = render_template(hass, path, path.read_text(), variables={"items": "not a method"})
+    result = render_template(hass, path, path.read_text(), global_vars={"items": "not a method"})
     assert result == {"value": "not a method"}
 
 
@@ -64,14 +64,14 @@ def test_undefined_jjb_variable_supports_default_and_is_defined(
     hass: HomeAssistant, write_template
 ) -> None:
     """`jjb.globals.<name> | default(...)` / `jjb.globals.<name> is defined`
-    must keep working for a name that was never declared in `variables`, the
+    must keep working for a name that was never declared in `globals`, the
     same guard idioms authors already rely on for plain undefined names."""
     path = write_template(
         "defaults.yaml.j2",
         "value: \"{{ jjb.globals.maybe_unset | default('fallback') }}\"\n"
         "flag: {{ jjb.globals.maybe_unset is defined }}\n",
     )
-    result = render_template(hass, path, path.read_text(), variables={"name": "kitchen"})
+    result = render_template(hass, path, path.read_text(), global_vars={"name": "kitchen"})
     assert result == {"value": "fallback", "flag": False}
 
 

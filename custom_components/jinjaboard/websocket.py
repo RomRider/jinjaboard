@@ -32,7 +32,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     {
         vol.Required("type"): "jinjaboard/render",
         vol.Required("template"): str,
-        vol.Optional("variables"): dict,
+        vol.Optional("globals"): dict,
     }
 )
 @websocket_api.async_response
@@ -43,7 +43,7 @@ async def handle_render(
 ) -> None:
     """Handle jinjaboard/render: resolve, read, and render a template file."""
     relative_path = msg["template"]
-    variables = msg.get("variables")
+    global_vars = msg.get("globals")
 
     try:
         path = resolve_config_path(hass, relative_path)
@@ -69,7 +69,7 @@ async def handle_render(
         # `run_callback_threadsafe` for the one call that must stay there
         # (`Template.async_render`).
         result = await hass.async_add_executor_job(
-            render_template, hass, path, source, variables
+            render_template, hass, path, source, global_vars
         )
     except JinjaboardPathError as err:
         # Raised here (rather than only by the resolve_config_path call

@@ -13,7 +13,7 @@ from .frontend import STATIC_URL_PATH, is_yaml_mode_resources
 class JinjaboardConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for JinjaBoard.
 
-    There is nothing to configure per entry: the template path and variables
+    There is nothing to configure per entry: the template path and globals
     for each dashboard live in the dashboard's own YAML (`strategy.options`),
     not in a config entry. This flow only exists to give the integration a
     standard, UI-discoverable way to be enabled.

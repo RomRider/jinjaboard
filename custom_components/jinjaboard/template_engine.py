@@ -171,15 +171,15 @@ def _render_jinja_on_loop(
     as a syntax error, so it reaches the dashboard's error card instead of
     only the HA log.
 
-    Dashboard-declared `variables` (`global_vars`) and `!include ... vars:`
+    Dashboard-declared `globals` (`global_vars`) and `!include ... vars:`
     (`inc_vars`) are exposed as `jjb.globals.<name>` / `jjb.inc.<name>`, not
     as bare top-level names — HA's template environment already defines a
     large set of its own globals (`states`, `now`, `area_id`, ...), and a
-    `variables:`/`vars:` entry that happened to reuse one of those names
+    `globals:`/`vars:` entry that happened to reuse one of those names
     would silently shadow it instead of erroring. They're also kept in two
     separate sub-namespaces rather than one merged `jjb.<name>`: an
     `!include`'s `vars:` used to be merged straight into the same dict as
-    the dashboard's own `variables`, which meant a per-include override
+    the dashboard's own `globals`, which meant a per-include override
     could silently shadow a dashboard-level variable of the same name.
     `jinja2.utils.Namespace` (the same object `{% set ns = namespace() %}`
     produces) is used for `jjb`, `jjb.globals`, and `jjb.inc` rather than a
@@ -223,7 +223,7 @@ def _render_and_parse(
     included path (passed in as `render_and_parse`, not imported directly,
     to avoid a circular import between this module and `includes.py`).
 
-    `global_vars` is the dashboard's own `variables:`, constant for the
+    `global_vars` is the dashboard's own `globals:`, constant for the
     whole render tree. `inc_vars` accumulates `!include ... vars:` as the
     tree is walked — see `includes.py`'s `_render_included_file` for how
     it's layered.
@@ -241,7 +241,7 @@ def render_template(
     hass: HomeAssistant,
     path: Path,
     source: str,
-    variables: dict[str, Any] | None = None,
+    global_vars: dict[str, Any] | None = None,
 ) -> Any:
     """Render `source` (the file at `path`) as YAML with embedded Jinja.
 
@@ -256,9 +256,9 @@ def render_template(
 
     `path` anchors relative `!include` targets to this file's own directory
     (matching real Home Assistant's `!include`) and seeds the cycle-detection
-    stack. `variables` becomes the render tree's `jjb.globals` — no
+    stack. `global_vars` becomes the render tree's `jjb.globals` — no
     `!include` has contributed `jjb.inc` vars yet, so that starts at `None`.
     """
     return _render_and_parse(
-        hass, path, source, variables, None, include_stack=[path.resolve()]
+        hass, path, source, global_vars, None, include_stack=[path.resolve()]
     )

@@ -27,7 +27,7 @@ export function createStrategyGenerate(buildErrorResult: (error: JinjaboardWsErr
     }
 
     try {
-      return await renderTemplate(hass, template, config?.variables);
+      return await renderTemplate(hass, template, config?.globals);
     } catch (err) {
       return buildErrorResult(err as JinjaboardWsError);
     }

@@ -10,12 +10,12 @@ import type { HomeAssistant, RenderRequest } from "./types";
 export function renderTemplate(
   hass: HomeAssistant,
   template: string,
-  variables?: Record<string, unknown>,
+  globals?: Record<string, unknown>,
 ): Promise<unknown> {
   const request: RenderRequest = {
     type: "jinjaboard/render",
     template,
-    variables,
+    globals,
   };
   return hass.callWS(request);
 }
