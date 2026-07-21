@@ -176,10 +176,22 @@ jobs:
           git tag "v${NEW_VERSION}"
           git push origin "v${NEW_VERSION}"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build the frontend bundle
+        working-directory: src
+        run: |
+          npm ci
+          npm run build
+
       - name: Zip the jinjaboard component
         # HACS zip-release convention: the asset must be named
         # <domain>.zip with the component's files at the zip root
-        # (not nested in an jinjaboard/ folder).
+        # (not nested in an jinjaboard/ folder). www/jinjaboard-strategy.js
+        # is .gitignore'd and only exists here because of the build step
+        # above — without it this zip silently ships with no frontend JS.
         run: |
           cd custom_components/jinjaboard
           zip -r "${GITHUB_WORKSPACE}/jinjaboard.zip" . -x '__pycache__/*'
