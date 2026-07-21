@@ -233,6 +233,61 @@ A few things worth knowing:
 - Circular includes and excessively deep include chains fail with a clear
   error naming the chain, rather than hanging or crashing.
 
+## Migrating from lovelace_gen
+
+If you're coming from `hass-lovelace_gen`, two things work differently:
+
+- **`!include` args are a mapping, not a following array.** `lovelace_gen`
+  passes template args to an include as a YAML sequence right after the tag.
+  JinjaBoard instead uses the mapping form shown above, with an explicit
+  `vars:` key:
+
+  ```yaml
+  # lovelace_gen
+  - !include
+    - cards/light.yaml.j2
+    - area_id: kitchen
+
+  # JinjaBoard
+  - !include
+    path: cards/light.yaml.j2
+    vars:
+      area_id: kitchen
+  ```
+
+  Inside the included file, read the value as `{{ jjb.inc.area_id }}` rather
+  than a bare `{{ area_id }}`.
+
+- **Global variables move from `configuration.yaml` into the dashboard
+  file, and `_global` becomes `jjb.globals`.** `lovelace_gen` defines global
+  vars once under its own key in `configuration.yaml`, available everywhere
+  as `_global.some_var`. JinjaBoard has no equivalent global config — instead,
+  put them under `variables:` in each dashboard's `strategy:` block (see
+  [Usage](#2-create-a-dashboard-that-uses-it) above) and read them as
+  `jjb.globals.some_var`:
+
+  ```yaml
+  # lovelace_gen (configuration.yaml)
+  lovelace_gen:
+    vars:
+      some_var: 123
+  # template
+  {{ _global.some_var }}
+
+  # JinjaBoard (dashboard strategy)
+  strategy:
+    type: custom:jinjaboard
+    template: jinjaboard/home.yaml.j2
+    variables:
+      some_var: 123
+  # template
+  {{ jjb.globals.some_var }}
+  ```
+
+  If several dashboards need the same variables, repeat the `variables:`
+  block in each one, or have each dashboard `!include` a shared file and pass
+  the values down via `vars:`.
+
 ## Error handling
 
 If a template fails to render or produces invalid YAML, the affected
