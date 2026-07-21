@@ -72,10 +72,14 @@ manually.
 Templates are plain YAML with embedded Jinja (`{{ }}` / `{% %}`) — **not** a
 template whose body constructs a JSON structure via `| to_json`. The
 pipeline is: render the raw file text through
-`Template(source, hass).async_render(variables, parse_result=False)` to get
-a plain string, then parse *that string* as YAML via
-`homeassistant.util.yaml.loader.parse_yaml`. Two deliberate departures from
-the obvious approach here, both are load-bearing:
+`Template(source, hass).async_render(variables, parse_result=False, strict=True)`
+to get a plain string, then parse *that string* as YAML through
+`includes.py`'s private loader (`includes.parse_with_includes` — **not**
+`homeassistant.util.yaml.loader.parse_yaml`; see "Includes" below for why).
+`strict=True` turns HA's default undefined-variable behavior (log a warning,
+render as empty) into a raised `TemplateError`, so a typo'd variable name
+surfaces as a `template_error` instead of a silently broken dashboard.
+Two more deliberate departures from the obvious approach, both load-bearing:
 
 - `parse_result=False` is required. `Template.async_render`'s own default
   result-parsing uses `ast.literal_eval`, not `json.loads`/YAML — it doesn't
@@ -150,11 +154,60 @@ internal shape ever changes on a core upgrade. `manifest.json` depends on
 `lovelace` specifically so this data structure exists by the time our
 `async_setup_entry` runs.
 
+### Includes (`includes.py`)
+
+`!include`/`!include_dir_list`/`!include_dir_named`/`!include_dir_merge_list`/
+`!include_dir_merge_named` mirror Home Assistant's own config-splitting tags,
+but each included file is its own Jinja template (rendered with `strict=True`
+like the root), not static YAML — resolved recursively, not via text
+splicing, so each file's own line numbers stay meaningful in error messages.
+
+**Why a private `yaml.SafeLoader` subclass, never
+`homeassistant.util.yaml.loader.parse_yaml`:** that function delegates to
+`annotatedyaml`, whose real `!include`/`!include_dir_*`/`!secret`/`!env_var`
+constructors are registered **globally** on the `FastSafeLoader`/
+`PythonSafeLoader` classes it also uses internally for HA's own
+`configuration.yaml`. Parsing our *rendered* template output with it — the
+obvious thing to do, and what this project did before includes existed — let
+a bare `!include ../../../../../../etc/hostname` in a template's rendered
+output silently read arbitrary files outside `config_dir` (confirmed live;
+`path_guard` never even ran). `includes._JinjaboardYamlLoader` registers its
+own five constructors on a standalone subclass instead, so parsing our
+rendered output can never trigger HA's real include machinery; any other
+stray `!tag` falls through to PyYAML's normal "could not determine a
+constructor" error (`yaml_parse_error`) rather than doing something silently
+wrong.
+
+**Path resolution**: relative to the *including file's own directory*
+(`path_guard.resolve_config_path`'s `base_dir` param), matching real HA's
+`!include` — not always relative to `config_dir` root like the top-level
+`strategy.template` path is. Still always re-confined to stay under
+`config_dir` regardless of `base_dir`.
+
+**Variables**: an included file automatically inherits whatever `variables`
+the file that included it had (like Jinja's own `{% include %}` "with
+context"), with an optional mapping form —
+`!include {path: x.yaml.j2, vars: {area_id: kitchen}}` — to layer on
+extra/overriding variables for that one include.
+
+**Cycle/depth guard**: `includes.py` threads a list of resolved absolute
+paths through every recursive call; a path already on the list raises
+`template_error` with the full chain, as does exceeding `MAX_INCLUDE_DEPTH`
+(20) — a coarse backstop, not a resource-limit story, consistent with there
+being no render-timeout guard yet either.
+
+**Directory includes are recursive** (`os.walk`, dotfiles/dot-dirs skipped)
+and match `*.yaml`/`*.yml`/`*.yaml.j2`/`*.yml.j2` — real HA's directory
+includes only match `*.yaml`; the two Jinja-extension patterns were added to
+fit this project's convention. `!include_dir_named`'s dict key strips the
+*full* recognized template extension (`kitchen.yaml.j2` → `kitchen`), not
+just the last `.`-segment like real HA's single `os.path.splitext`.
+
 ### Error codes
 
 WS errors use a fixed set of codes (`path_missing`, `path_traversal`,
-`template_error`, `yaml_parse_error`, and the not-yet-triggerable
-`include_not_found`/`render_timeout`), sent via `connection.send_error`, so
+`include_not_found`, `template_error`, `yaml_parse_error`, and the
+not-yet-triggerable `render_timeout`), sent via `connection.send_error`, so
 the frontend can branch and show a specific message instead of a blank
 dashboard. Keep `websocket.py`'s error-code table and `src/types.ts`'s
 `JinjaboardErrorCode` union in sync by hand.

@@ -1,0 +1,7 @@
+views:
+  - title: Includes Demo
+    cards:
+      - !include header.yaml.j2
+      - !include {path: greeting.yaml.j2, vars: {area_id: kitchen}}
+  - title: Dir List
+    cards: !include_dir_list cards

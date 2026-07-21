@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
+from .errors import JinjaboardIncludeNotFoundError
 from .path_guard import JinjaboardPathError, resolve_config_path
 from .template_engine import (
     JinjaboardTemplateError,
@@ -61,7 +62,16 @@ async def handle_render(
         return
 
     try:
-        result = render_template(hass, source, variables)
+        result = render_template(hass, path, source, variables)
+    except JinjaboardPathError as err:
+        # Raised here (rather than only by the resolve_config_path call
+        # above) when an `!include`/`!include_dir_*` target inside the
+        # template resolves outside config_dir.
+        connection.send_error(msg["id"], "path_traversal", str(err))
+        return
+    except JinjaboardIncludeNotFoundError as err:
+        connection.send_error(msg["id"], "include_not_found", str(err))
+        return
     except JinjaboardTemplateError as err:
         message = str(err)
         if err.line is not None:

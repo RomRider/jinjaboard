@@ -32,10 +32,13 @@ This is under active development. Implemented so far:
   the same convention `lovelace_gen` used
 - ✅ `ll-strategy-dashboard-jinjaboard` Lovelace dashboard strategy
 - ✅ Path-traversal guarding, typed error codes surfaced to the frontend
+- ✅ `!include`/`!include_dir_list`/`!include_dir_named`/`!include_dir_merge_list`/
+  `!include_dir_merge_named` — splitting a dashboard across multiple files,
+  mirroring [Home Assistant's own config-splitting
+  tags](https://www.home-assistant.io/docs/configuration/splitting_configuration/)
 
 Not yet implemented (see the project plan for the full milestone list):
 
-- ⛔ `!include path {params}` — splitting a dashboard across multiple files
 - ⛔ Root-level `vars:` block
 - ⛔ `ll-strategy-view-jinjaboard` (per-view, lazy generation)
 - ⛔ Render caching
@@ -124,6 +127,52 @@ passes straight through JinjaBoard's render untouched — the literal `{{ }}`
 text ends up in the rendered dashboard config, and the markdown card
 evaluates it itself via its own `render_template` subscription.
 
+### Splitting a dashboard across files
+
+JinjaBoard supports the same five tags as [Home Assistant's own config
+splitting](https://www.home-assistant.io/docs/configuration/splitting_configuration/):
+`!include`, `!include_dir_list`, `!include_dir_named`,
+`!include_dir_merge_list`, `!include_dir_merge_named`. Unlike real HA config
+files, an included file can itself contain Jinja — it's rendered exactly like
+the root template before being parsed, so `!include`s can nest arbitrarily
+deep.
+
+```yaml
+views:
+  - title: Home
+    cards:
+      - !include cards/header.yaml.j2
+      - !include_dir_list cards/lights
+  - title: Named example
+    cards: !include_dir_merge_list cards/climate
+```
+
+A few things that differ from a plain HA config file, worth knowing:
+
+- **Paths are relative to the including file**, not the root template —
+  `cards/header.yaml.j2` inside `home.yaml.j2` resolves next to `home.yaml.j2`
+  itself, matching real HA's `!include`. Every resolved path is still
+  guarded to stay inside the Home Assistant config directory, at every
+  nesting level.
+- **Variables are inherited.** An included file automatically sees whatever
+  `variables` (and, once implemented, `vars:`) the file that included it can
+  see — like Jinja's own `{% include %}` "with context" behavior. To pass
+  something extra (or override a value) for just that one include, use the
+  mapping form instead of a bare path:
+  ```yaml
+  - !include {path: cards/light.yaml.j2, vars: {area_id: kitchen}}
+  ```
+- **Directory includes are recursive** and match `*.yaml`, `*.yml`,
+  `*.yaml.j2`, and `*.yml.j2` (dotfiles and dot-directories are skipped).
+  Every matched file is rendered through Jinja regardless of which pattern
+  matched it — a plain `.yaml` file with no `{{ }}`/`{% %}` just renders
+  unchanged, so static and templated snippets can live side by side.
+- **`!include_dir_named`'s key** is the filename with its full recognized
+  template extension stripped (`kitchen.yaml.j2` → `kitchen`), not just the
+  last `.` segment.
+- Circular includes and excessively deep include chains fail with a clear
+  `template_error` naming the chain, rather than hanging or crashing.
+
 ## Error handling
 
 If a template fails to render or produces invalid YAML, the dashboard shows
@@ -131,11 +180,11 @@ a markdown card with the error instead of a blank screen. Error codes:
 
 | Code | Meaning |
 |---|---|
-| `path_missing` | The template file doesn't exist or can't be read |
-| `path_traversal` | The path resolves outside the Home Assistant config directory |
-| `template_error` | Jinja itself failed (syntax error, undefined variable/function, etc.) — the message includes the template source line number where possible |
-| `yaml_parse_error` | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block |
-| `include_not_found` | (planned) an `!include`d file is missing |
+| `path_missing` | The root template file doesn't exist or can't be read |
+| `path_traversal` | The root template, or an `!include`/`!include_dir_*` target inside it, resolves outside the Home Assistant config directory |
+| `include_not_found` | An `!include`d file doesn't exist |
+| `template_error` | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include cycle / excessive include depth was detected — the message includes the template source line number where possible, and for nested includes, which file it happened in |
+| `yaml_parse_error` | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block, or an unrecognized `!tag` |
 | `render_timeout` | (planned) rendering took too long |
 
 ## Development

@@ -2,32 +2,25 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+import yaml
+
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError, TemplateError
+from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.template import Template
-from homeassistant.util.yaml.loader import parse_yaml
 
+from .errors import JinjaboardTemplateError, JinjaboardYamlError
+from .includes import parse_with_includes
 
-class JinjaboardError(Exception):
-    """Base error for JinjaBoard template rendering."""
-
-
-class JinjaboardTemplateError(JinjaboardError):
-    """Raised when Jinja2 rendering itself fails (bad syntax, runtime error)."""
-
-    def __init__(self, message: str, line: int | None = None) -> None:
-        super().__init__(message)
-        self.line = line
-
-
-class JinjaboardYamlError(JinjaboardError):
-    """Raised when the rendered output is not valid YAML."""
-
-    def __init__(self, raw_output: str) -> None:
-        super().__init__("Rendered template output was not valid YAML")
-        self.raw_output = raw_output
+# Re-exported for websocket.py / callers that only need the exception types,
+# so most of the codebase can import them from here rather than .errors.
+__all__ = [
+    "JinjaboardTemplateError",
+    "JinjaboardYamlError",
+    "render_template",
+]
 
 
 def _extract_lineno(err: TemplateError) -> int | None:
@@ -64,17 +57,10 @@ def _extract_lineno(err: TemplateError) -> int | None:
     return line
 
 
-def render_template(
-    hass: HomeAssistant, source: str, variables: dict[str, Any] | None = None
-) -> Any:
-    """Render `source` as an HA Jinja2 template and parse the result as YAML.
-
-    `source` is authored as YAML with embedded Jinja (`{{ }}` / `{% %}`) —
-    the same convention lovelace_gen used — not a template whose Jinja body
-    directly constructs the output structure. We render it to a plain string
-    first (with `parse_result=False`, since `Template.async_render`'s own
-    result parsing uses `ast.literal_eval` and isn't what we want here
-    either), then parse that string as YAML.
+def _render_jinja(
+    hass: HomeAssistant, source: str, variables: dict[str, Any] | None
+) -> str:
+    """Render `source` through Jinja only, returning the raw rendered string.
 
     `strict=True` is required: HA's default undefined-variable behavior
     (`LoggingUndefined`) just logs "Template variable warning" and renders
@@ -87,11 +73,53 @@ def render_template(
     """
     template = Template(source, hass)
     try:
-        raw = template.async_render(variables, parse_result=False, strict=True)
+        return template.async_render(variables, parse_result=False, strict=True)
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
 
+
+def _render_and_parse(
+    hass: HomeAssistant,
+    path: Path,
+    source: str,
+    variables: dict[str, Any] | None,
+    include_stack: list[Path],
+) -> Any:
+    """Render `source` (already read from `path`) and parse it as YAML.
+
+    Shared by the root template and, recursively, every `!include`d file —
+    `includes.py`'s tag constructors call back into this function for each
+    included path (passed in as `render_and_parse`, not imported directly,
+    to avoid a circular import between this module and `includes.py`).
+    """
+    raw = _render_jinja(hass, source, variables)
     try:
-        return parse_yaml(raw)
-    except HomeAssistantError as err:
+        return parse_with_includes(
+            hass, raw, path.parent, variables, include_stack, _render_and_parse
+        )
+    except yaml.YAMLError as err:
         raise JinjaboardYamlError(raw) from err
+
+
+def render_template(
+    hass: HomeAssistant,
+    path: Path,
+    source: str,
+    variables: dict[str, Any] | None = None,
+) -> Any:
+    """Render `source` (the file at `path`) as YAML with embedded Jinja.
+
+    `source` is authored as YAML with embedded Jinja (`{{ }}` / `{% %}`) —
+    the same convention lovelace_gen used — not a template whose Jinja body
+    directly constructs the output structure. It's rendered to a plain
+    string first (with `parse_result=False`, since `Template.async_render`'s
+    own result parsing uses `ast.literal_eval` and isn't what we want here
+    either), then that string is parsed as YAML — resolving any
+    `!include`/`!include_dir_*` tags it contains along the way (see
+    `includes.py`).
+
+    `path` anchors relative `!include` targets to this file's own directory
+    (matching real Home Assistant's `!include`) and seeds the cycle-detection
+    stack.
+    """
+    return _render_and_parse(hass, path, source, variables, include_stack=[path.resolve()])
