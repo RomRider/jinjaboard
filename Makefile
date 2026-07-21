@@ -53,7 +53,7 @@ build:
 	cd src && npm run build
 
 run:
-	$(HASS) -c /config
+	container start-debug
 
 clean:
 	find . -name '__pycache__' -not -path './src/node_modules/*' -exec rm -rf {} +

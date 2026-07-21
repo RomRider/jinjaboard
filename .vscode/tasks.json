@@ -4,7 +4,7 @@
     {
       "type": "shell",
       "label": "devcontainer: Start HA",
-      "command": "echo 'Starting Home Assistant' && sh -c 'container start-debug'",
+      "command": "echo 'Starting Home Assistant' && sh -c 'make run'",
       "problemMatcher": {
         "owner": "custom",
         "pattern": [
@@ -27,7 +27,7 @@
     {
       "type": "shell",
       "label": "devcontainer: stop debug",
-      "command": "echo 'Stopping Home Assistant' && sh -c 'killall -9 /home/vscode/.local/ha-venv/bin/python3'",
+      "command": "echo 'Stopping Home Assistant' && sh -c 'killall /home/vscode/.local/ha-venv/bin/python3'",
       "problemMatcher": []
     }
   ]
