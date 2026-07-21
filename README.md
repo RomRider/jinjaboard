@@ -2,46 +2,36 @@
 
 Author Home Assistant Lovelace dashboards as **YAML files with embedded
 Jinja2**, rendered live by Home Assistant's own template engine — the same
-engine, functions, and filters available to automations (`states()`,
-`areas()`, `devices()`, `labels()`, and everything else) — and displayed
-through a custom Lovelace [dashboard
-strategy](https://developers.home-assistant.io/docs/frontend/custom-ui/custom-strategy/).
+one used by automations (`states()`, `areas()`, `devices()`, `labels()`, and
+everything else) — and displayed through a custom Lovelace dashboard
+strategy.
 
 It's a spiritual successor to
 [`hass-lovelace_gen`](https://github.com/thomasloven/hass-lovelace_gen), with
 two differences:
 
-- **Live, not pre-generated.** `lovelace_gen` renders your templates to a
-  static YAML file via a script/service call. JinjaBoard renders on demand,
-  through an authenticated WebSocket API, when you open (or refresh) the
-  dashboard.
-- **Real automation templating.** JinjaBoard renders through
-  `homeassistant.helpers.template.Template` — the actual engine, sandbox, and
-  function set HA uses for automations — not a JavaScript reimplementation of
-  Jinja running against the frontend's cached state (which is what
-  [`ha-nunjucks`](https://github.com/iantrich/ha-nunjucks)-based tools do).
+- **Live, not pre-generated.** Your dashboard re-renders whenever you open or
+  refresh it, instead of needing a script/service call to regenerate a static
+  file.
+- **Real Home Assistant templating.** JinjaBoard uses Home Assistant's actual
+  template engine, so anything you can do in an automation template works
+  here too — unlike JavaScript-based Jinja reimplementations that only see
+  the frontend's cached state.
 
 ## Status
 
 This is under active development. Implemented so far:
 
-- ✅ Config flow (single-instance, no fields — just enables the integration)
-- ✅ `jinjaboard/render` WebSocket command: resolves a template path, renders
-  it, returns the parsed structure
-- ✅ Templates authored as plain YAML with embedded Jinja (`{{ }}` / `{% %}`),
-  the same convention `lovelace_gen` used
-- ✅ `ll-strategy-dashboard-jinjaboard` Lovelace dashboard strategy
-- ✅ `ll-strategy-view-jinjaboard` Lovelace view strategy (per-view, lazy
-  generation)
-- ✅ `ll-strategy-section-jinjaboard` Lovelace section strategy (per-section,
-  lazy generation)
-- ✅ Path-traversal guarding, typed error codes surfaced to the frontend
-- ✅ `!include`/`!include_dir_list`/`!include_dir_named`/`!include_dir_merge_list`/
-  `!include_dir_merge_named` — splitting a dashboard across multiple files,
+- ✅ Dashboards, views, and sections authored as plain YAML with embedded
+  Jinja (`{{ }}` / `{% %}`)
+- ✅ Lovelace dashboard, view, and section strategies
+- ✅ Path-traversal protection, with clear error messages instead of a blank
+  dashboard
+- ✅ Splitting a dashboard across multiple files with `!include` and friends,
   mirroring [Home Assistant's own config-splitting
   tags](https://www.home-assistant.io/docs/configuration/splitting_configuration/)
 
-Not yet implemented (see the project plan for the full milestone list):
+Not yet implemented:
 
 - ⛔ Root-level `vars:` block
 - ⛔ Render caching
@@ -56,9 +46,9 @@ Via [HACS](https://hacs.xyz/): add this repository as a custom repository
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RomRider&repository=jinjaboard&category=integration)
 
 After installing, go to **Settings → Devices & Services → Add Integration**
-and add **JinjaBoard**. There's nothing to configure — this step just enables
-the integration (registers the WebSocket command and the frontend resource).
-Only one instance is needed per Home Assistant install.
+and add **JinjaBoard**. There's nothing to configure — this step just
+activates the integration. Only one instance is needed per Home Assistant
+install.
 
 ## Usage
 
@@ -83,18 +73,15 @@ views:
 ```
 
 The rendered output is parsed as YAML, so ordinary YAML indentation rules
-apply around any `{% for %}` / `{% if %}` blocks — the same tradeoff
-`lovelace_gen` has. The
+apply around any `{% for %}` / `{% if %}` blocks. The
 [`yaml-jinja-highlight`](https://marketplace.visualstudio.com/items?itemName=samuelcolvin.jinjahtml)
 VS Code extension is a good companion for editing these.
 
-A whole-line YAML comment (`#` is the first non-whitespace character) is
-never handed to Jinja — so commenting out a line to disable it,
-`# - !include cards/lights.yaml.j2` or `# {{ some_var }}`, doesn't risk a
-`template_error` from code you meant to turn off. This doesn't apply to a
-trailing `key: value  # comment`, only a whole line, and it doesn't apply
-inside a `content: |`/`content: >` block scalar — a markdown card's literal
-`# Heading` stays exactly as written.
+A whole-line comment (`#` as the first non-whitespace character) is safe to
+use for commenting out Jinja you don't want evaluated, e.g.
+`# - !include cards/lights.yaml.j2` or `# {{ some_var }}`. This doesn't apply
+to a trailing `key: value  # comment`, and it never touches a markdown card's
+`content: |` block, so a literal `# Heading` there is left alone.
 
 ### 2. Create a dashboard that uses it
 
@@ -110,21 +97,16 @@ strategy:
     some_var: 123
 ```
 
-- `template` is a path to your file, **relative to the Home Assistant config
-  directory** (`/config`). It's validated on every render and can't escape
-  that directory.
+- `template` is a path to your file, relative to the Home Assistant config
+  directory (`/config`).
 - `variables` (optional) are made available in the template under
   `jjb.globals` — `some_var` above is read as `{{ jjb.globals.some_var }}`,
-  not `{{ some_var }}`. This is deliberate: HA's template environment
-  already defines a large set of its own globals (`states`, `now`,
-  `area_id`, ...), and a bare top-level variable name could silently shadow
-  one of them instead of erroring. Namespacing under `jjb` avoids that
-  entirely, at the cost of one extra `jjb.` prefix. `jjb.globals` is kept
-  separate from `jjb.inc` (below) so a per-`!include` `vars:` override can
-  never shadow a dashboard-level variable of the same name.
+  not `{{ some_var }}`. This keeps your variables from accidentally clashing
+  with Home Assistant's own built-in template variables (`states`, `now`,
+  `area_id`, ...).
 
 Save, and the dashboard renders your template's output. Re-opening the
-dashboard (or reloading the page) re-renders it — JinjaBoard does not
+dashboard (or reloading the page) re-renders it — JinjaBoard doesn't
 re-render on every entity state change, only on demand.
 
 ### 3. Use it as a view strategy
@@ -148,11 +130,9 @@ views:
 ```
 
 The template's rendered output replaces the view's own content (typically a
-`cards:` list, optionally other view-level keys). Any sibling key already on
-the view (`title`, `path`, `icon`, ...) is kept unless the render's own
-output defines the same key, in which case the render wins. A render
-failure in this view only shows an error card in that one view — the rest
-of the dashboard, and any other views, are unaffected.
+`cards:` list). Other view-level keys (`title`, `path`, `icon`, ...) are kept
+unless your render's output sets them too. If this one view fails to render,
+only that view shows an error — the rest of the dashboard is unaffected.
 
 ### 4. Use it as a section strategy
 
@@ -176,17 +156,16 @@ views:
             some_var: 123
 ```
 
-Same merge and error-isolation behavior as the view strategy, one level
-down: sibling keys on the section (`column_span`, `title`, ...) are kept
-unless the render's output overrides them, and a render failure only shows
-an error card in that one section.
+Same behavior as the view strategy, one level down: a render failure only
+shows an error card in that one section.
 
 ### Keeping a card's own live templating
 
 Cards with native runtime templating — the markdown card's `content`, the
 template card, tile card features — should have their Jinja stay _live_,
-evaluated by the card itself, not baked in at generation time. Wrap those
-blocks in Jinja's own `{% raw %}...{% endraw %}` tag:
+evaluated by the card itself rather than baked in when JinjaBoard renders.
+Wrap those blocks in Jinja's own `{% raw %}...{% endraw %}` tag so JinjaBoard
+leaves them untouched:
 
 ```yaml
 - type: markdown
@@ -196,20 +175,17 @@ blocks in Jinja's own `{% raw %}...{% endraw %}` tag:
     {% endraw %}
 ```
 
-`{% raw %}` is a core Jinja2 feature, independent of HA's sandboxing, so it
-passes straight through JinjaBoard's render untouched — the literal `{{ }}`
-text ends up in the rendered dashboard config, and the markdown card
-evaluates it itself via its own `render_template` subscription.
+The literal `{{ }}` text ends up in the rendered dashboard config, and the
+markdown card evaluates it live itself.
 
 ### Splitting a dashboard across files
 
 JinjaBoard supports the same five tags as [Home Assistant's own config
 splitting](https://www.home-assistant.io/docs/configuration/splitting_configuration/):
 `!include`, `!include_dir_list`, `!include_dir_named`,
-`!include_dir_merge_list`, `!include_dir_merge_named`. Unlike real HA config
-files, an included file can itself contain Jinja — it's rendered exactly like
-the root template before being parsed, so `!include`s can nest arbitrarily
-deep.
+`!include_dir_merge_list`, `!include_dir_merge_named`. Unlike a plain HA
+config file, an included file can itself contain Jinja, and includes can
+nest arbitrarily deep.
 
 ```yaml
 views:
@@ -221,35 +197,41 @@ views:
     cards: !include_dir_merge_list cards/climate
 ```
 
-A few things that differ from a plain HA config file, worth knowing:
+A few things worth knowing:
 
 - **Paths are relative to the including file**, not the root template —
   `cards/header.yaml.j2` inside `home.yaml.j2` resolves next to `home.yaml.j2`
-  itself, matching real HA's `!include`. Every resolved path is still
-  guarded to stay inside the Home Assistant config directory, at every
-  nesting level.
-- **`vars:` are inherited, separately from `variables:`.** An included file
-  automatically sees whatever `vars:` the file that included it can see —
-  like Jinja's own `{% include %}` "with context" behavior — exposed under
-  `jjb.inc`, not `jjb.globals`. To pass something extra (or override a value
-  for just that one include and everything nested under it), use the
-  mapping form instead of a bare path:
+  itself, matching real HA's `!include`.
+- **`vars:` are inherited separately from `variables:`.** An included file
+  automatically sees whatever `vars:` the file that included it can see,
+  exposed under `jjb.inc` (not `jjb.globals`). To pass something extra (or
+  override a value for just that one include and everything nested under
+  it), use the mapping form instead of a bare path:
+
   ```yaml
   - !include { path: cards/light.yaml.j2, vars: { area_id: kitchen } }
   ```
+
+  Or if you prefer the block style:
+
+  ```yaml
+  - !include
+    path: cards/light.yaml.j2
+    vars:
+      area_id: kitchen
+  ```
+
   `cards/light.yaml.j2` reads this as `{{ jjb.inc.area_id }}` — the
-  dashboard's own `variables:` (`jjb.globals`) are still visible unchanged
-  alongside it, since the two namespaces never merge.
+  dashboard's own `variables:` (`jjb.globals`) stay visible alongside it.
+
 - **Directory includes are recursive** and match `*.yaml`, `*.yml`,
-  `*.yaml.j2`, and `*.yml.j2` (dotfiles and dot-directories are skipped).
-  Every matched file is rendered through Jinja regardless of which pattern
-  matched it — a plain `.yaml` file with no `{{ }}`/`{% %}` just renders
-  unchanged, so static and templated snippets can live side by side.
-- **`!include_dir_named`'s key** is the filename with its full recognized
-  template extension stripped (`kitchen.yaml.j2` → `kitchen`), not just the
-  last `.` segment.
+  `*.yaml.j2`, and `*.yml.j2` (dotfiles and dot-directories are skipped). A
+  plain `.yaml` file with no Jinja in it just renders unchanged, so static
+  and templated snippets can live side by side.
+- **`!include_dir_named`'s key** is the filename with its template extension
+  stripped, e.g. `kitchen.yaml.j2` → `kitchen`.
 - Circular includes and excessively deep include chains fail with a clear
-  `template_error` naming the chain, rather than hanging or crashing.
+  error naming the chain, rather than hanging or crashing.
 
 ## Error handling
 
@@ -257,14 +239,14 @@ If a template fails to render or produces invalid YAML, the affected
 dashboard, view, or section shows a markdown card with the error instead of
 a blank screen. Error codes:
 
-| Code                | Meaning                                                                                                                                                                                                                                                     |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path_missing`      | The root template file doesn't exist or can't be read                                                                                                                                                                                                       |
-| `path_traversal`    | The root template, or an `!include`/`!include_dir_*` target inside it, resolves outside the Home Assistant config directory                                                                                                                                 |
-| `include_not_found` | An `!include`d file doesn't exist                                                                                                                                                                                                                           |
-| `template_error`    | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include cycle / excessive include depth was detected — the message includes the template source line number where possible, and for nested includes, which file it happened in |
-| `yaml_parse_error`  | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block, or an unrecognized `!tag`                                                                                                      |
-| `render_timeout`    | (planned) rendering took too long                                                                                                                                                                                                                           |
+| Code                | Meaning                                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `path_missing`      | The root template file doesn't exist or can't be read                                                                       |
+| `path_traversal`    | A template or include path resolves outside the Home Assistant config directory                                             |
+| `include_not_found` | An `!include`d file doesn't exist                                                                                           |
+| `template_error`    | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include problem was detected                   |
+| `yaml_parse_error`  | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block |
+| `render_timeout`    | (planned) rendering took too long                                                                                           |
 
 ## Development
 
@@ -275,55 +257,25 @@ instance with this integration mounted at
 test entities. `.devcontainer/test/jinjaboard/` holds example/fixture
 templates used during development.
 
-Frontend source lives in `src/` (TypeScript, bundled with
-[esbuild](https://esbuild.github.io/)):
+A `Makefile` at the repo root wraps the common commands — run `make help` to
+list all targets.
 
 ```bash
-cd src
-npm install
-npm run typecheck   # tsc --noEmit
-npm run build        # bundles to custom_components/jinjaboard/www/jinjaboard-strategy.js
+make install       # install backend + frontend dependencies
+make build          # bundle src/ into custom_components/jinjaboard/www/
+make run            # start a real HA instance against /config (devcontainer only)
 ```
 
-The built bundle is `.gitignore`d and rebuilt as part of the release
-workflow — don't commit it. Because of that, `hacs.json` sets
-`"zip_release": true` / `"filename": "jinjaboard.zip"` so HACS installs from
-the release workflow's zip asset instead of a plain source-tree checkout of
-the tag — without `zip_release`, HACS downloads the repository's git content
-directly, which never contains this gitignored file.
+The built frontend bundle is `.gitignore`d and rebuilt as part of the release
+workflow — don't commit it.
 
 ### Tests
 
-Backend (`pytest` + `pytest-homeassistant-custom-component`, installed into
-the devcontainer's own `/home/vscode/.local/ha-venv` — done automatically on
-container start, see `.devcontainer/install-deps.sh`):
-
 ```bash
-uv pip install -r requirements-test.txt -p /home/vscode/.local/ha-venv/bin/python
-/home/vscode/.local/ha-venv/bin/python -m pytest
+make test            # backend + frontend
+make test-backend    # pytest
+make test-frontend   # vitest
+make typecheck        # tsc --noEmit
 ```
 
-Frontend (`vitest`):
-
-```bash
-cd src && npm install && npm run test
-```
-
-Both run in CI on every push and pull request (against a fresh, disposable
-runner venv, unrelated to the devcontainer's).
-
-## Why not `add_extra_js_url`?
-
-If you're reading the source: the frontend bundle is registered as a
-[Lovelace resource](https://www.home-assistant.io/dashboards/resources/)
-(`hass.data[LOVELACE_DATA].resources`) rather than via the more commonly used
-`homeassistant.components.frontend.add_extra_js_url`. That was a deliberate,
-tested choice: `add_extra_js_url` embeds a classic
-`<script>import(url)</script>` tag in the server-rendered HTML, and that
-dynamic import is unreliable in Firefox specifically — it can silently never
-resolve, which makes Lovelace's dashboard-strategy loader hit its hardcoded
-5-second timeout ("Timeout waiting for strategy element ... to be
-registered"). Registering as a Lovelace resource goes through
-home-assistant-frontend's own `loadModule()` (a real
-`<script type="module" src="...">` element), which tested reliably in both
-Chrome and Firefox.
+Both suites also run in CI on every push and pull request.
