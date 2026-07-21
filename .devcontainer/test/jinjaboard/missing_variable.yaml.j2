@@ -1,0 +1,7 @@
+views:
+  - title: Missing Variable
+    cards:
+      {% for entity_id in area_entities(a) if entity_id.startswith("light.") %}
+      - type: tile
+        entity: {{ entity_id }}
+      {% endfor %}

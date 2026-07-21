@@ -63,7 +63,10 @@ async def handle_render(
     try:
         result = render_template(hass, source, variables)
     except JinjaboardTemplateError as err:
-        connection.send_error(msg["id"], "template_error", str(err))
+        message = str(err)
+        if err.line is not None:
+            message = f"Line {err.line}: {message}"
+        connection.send_error(msg["id"], "template_error", message)
         return
     except JinjaboardYamlError as err:
         preview = err.raw_output[:_RAW_OUTPUT_PREVIEW_CHARS]

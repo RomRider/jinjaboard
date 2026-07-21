@@ -1,0 +1,6 @@
+title: JinjaBoard Test
+cards:
+  {% for i in [1,2,3] %}
+  - type: markdown
+    content: "Hello from {{ 'Jinja' + 'Board' }}!"
+  {% endfor %}

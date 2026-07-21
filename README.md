@@ -133,7 +133,7 @@ a markdown card with the error instead of a blank screen. Error codes:
 |---|---|
 | `path_missing` | The template file doesn't exist or can't be read |
 | `path_traversal` | The path resolves outside the Home Assistant config directory |
-| `template_error` | Jinja itself failed (syntax error, undefined function, etc.) |
+| `template_error` | Jinja itself failed (syntax error, undefined variable/function, etc.) — the message includes the template source line number where possible |
 | `yaml_parse_error` | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block |
 | `include_not_found` | (planned) an `!include`d file is missing |
 | `render_timeout` | (planned) rendering took too long |
