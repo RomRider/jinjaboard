@@ -128,6 +128,31 @@ Save, and the dashboard renders your template's output. Re-opening the
 dashboard (or reloading the page) re-renders it — JinjaBoard doesn't
 re-render on every entity state change, only on demand.
 
+> [!TIP]
+> If you manage dashboards as files (`mode: yaml` in `configuration.yaml`'s
+> `lovelace: dashboards:` block) instead of through the UI, the dashboard
+> file itself is just the same `strategy:` block above — the whole file's
+> content, not wrapped in anything else:
+>
+> ```yaml
+> # configuration.yaml
+> lovelace:
+>   dashboards:
+>     my-dashboard:
+>       mode: yaml
+>       filename: dashboards/my-dashboard.yaml
+>       title: My Dashboard
+> ```
+>
+> ```yaml
+> # dashboards/my-dashboard.yaml
+> strategy:
+>   type: custom:jinjaboard
+>   template: jinjaboard/home.yaml
+>   globals:
+>     some_var: 123
+> ```
+
 ### 3. Use it as a view strategy
 
 A `strategy:` can also be attached to a single view instead of the whole
