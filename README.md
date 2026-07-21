@@ -44,8 +44,6 @@ This is under active development. Implemented so far:
 
 Not yet implemented:
 
-- ⛔ Root-level `vars:` block
-- ⛔ Render caching
 - ⛔ A polished in-dashboard error panel (errors currently render as a plain
   markdown card)
 - ⛔ Automatic re-render on entity state change — for now, a dashboard only
