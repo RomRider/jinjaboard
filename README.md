@@ -14,9 +14,20 @@ two differences:
   refresh it, instead of needing a script/service call to regenerate a static
   file.
 - **Real Home Assistant templating.** JinjaBoard uses Home Assistant's actual
-  template engine, so anything you can do in an automation template works
-  here too — unlike JavaScript-based Jinja reimplementations that only see
-  the frontend's cached state.
+  [template engine](https://www.home-assistant.io/docs/templating/), so
+  anything you can do in an automation template works here too.
+
+A dashboard is just a loop over whatever Home Assistant already knows about
+your house, so it stops needing maintenance every time you add a device.
+A few things people build with it (full versions in
+[Real-world examples](#real-world-examples)):
+
+- A room-by-room view that grows on its own — add a light, it appears next
+  time you open the dashboard.
+- A "needs attention" view collecting every low battery and unavailable
+  entity in one place.
+- A curated view driven by entity labels, re-organized from Home Assistant's
+  UI instead of hand-edited YAML.
 
 ## Status
 
@@ -37,6 +48,8 @@ Not yet implemented:
 - ⛔ Render caching
 - ⛔ A polished in-dashboard error panel (errors currently render as a plain
   markdown card)
+- ⛔ Automatic re-render on entity state change — for now, a dashboard only
+  re-renders when you open or refresh the page (see [Usage](#2-create-a-dashboard-that-uses-it))
 
 ## Installation
 
@@ -306,6 +319,60 @@ A few things worth knowing:
   `jjb.macros`'s namespace), only the macro names inside them.
 - A missing macro file or directory surfaces the same `include_not_found`
   error as a missing `!include` target.
+
+## Real-world examples
+
+**Every light, grouped by room, with zero upkeep.** The example under
+[Write a template](#1-write-a-template) above is this in its simplest form —
+loop over `areas()`, and a card appears for every light in every room. Add a
+light, or a whole new room, in Home Assistant and it shows up next time you
+open the dashboard; nothing to edit.
+
+**A "needs attention" view.** Home Assistant already tracks battery levels
+and availability for every entity — this just puts what it knows somewhere
+you'll actually see it, instead of buried in Settings → Devices & Services.
+
+```yaml
+views:
+  - title: Needs attention
+    cards:
+      - type: heading
+        heading: Low battery
+      {% for state in states.sensor
+         if state.attributes.get('device_class') == 'battery'
+         and state.state not in ('unknown', 'unavailable')
+         and state.state | int(100) < 20 %}
+      - type: tile
+        entity: {{ state.entity_id }}
+      {% endfor %}
+      - type: heading
+        heading: Unavailable
+      {% for state in states if state.state == 'unavailable' %}
+      - type: tile
+        entity: {{ state.entity_id }}
+      {% endfor %}
+```
+
+> [!IMPORTANT]
+> This reflects state as of the last render, not live — open or refresh the
+> dashboard to pick up a battery that dropped or a device that went
+> unavailable since (see [Status](#status)).
+
+**A curated view driven by labels, not YAML.** Tag entities with a label
+from Home Assistant's own UI (**Settings → Areas, labels & zones →
+Labels**), and this card renders whatever currently carries it — re-curate
+the dashboard by relabeling entities in the UI instead of hand-editing
+cards.
+
+```yaml
+views:
+  - title: Favorites
+    cards:
+      {% for entity_id in label_entities('favorite') %}
+      - type: tile
+        entity: {{ entity_id }}
+      {% endfor %}
+```
 
 ## Migrating from lovelace_gen
 
