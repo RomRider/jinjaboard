@@ -141,7 +141,7 @@ manually.
 Templates are plain YAML with embedded Jinja (`{{ }}` / `{% %}`) — **not** a
 template whose body constructs a JSON structure via `| to_json`. The
 pipeline is: render the raw file text through
-`Template(source, hass).async_render({"jjb": Namespace(variables or {})}, parse_result=False, strict=True)`
+`Template(source, hass).async_render({"jjb": Namespace(globals=Namespace(global_vars or {}), inc=Namespace(inc_vars or {}))}, parse_result=False, strict=True)`
 to get a plain string, then parse *that string* as YAML through
 `includes.py`'s private loader (`includes.parse_with_includes` — **not**
 `homeassistant.util.yaml.loader.parse_yaml`; see "Includes" below for why).
@@ -150,12 +150,20 @@ render as empty) into a raised `TemplateError`, so a typo'd variable name
 surfaces as a `template_error` instead of a silently broken dashboard.
 Three more deliberate departures from the obvious approach, all load-bearing:
 
-- Dashboard-declared `variables` are only reachable as `jjb.<name>`, never as
-  a bare top-level name — passing `variables` straight through as the render
-  context would let one silently shadow one of HA's own template globals
-  (`states`, `now`, `area_id`, ...). `jinja2.utils.Namespace` (not a plain
-  `dict`) is used for the `jjb` object specifically so a variable named e.g.
-  `items` can't be shadowed by `dict.items` itself — attribute access on a
+- Dashboard-declared `variables` (the strategy's own `variables:`, threaded
+  through as `global_vars`) are only reachable as `jjb.globals.<name>`, and
+  `!include ... vars:` (threaded through as `inc_vars`, inherited/layered by
+  `includes.py`'s `_render_included_file` as the include tree is walked) only
+  as `jjb.inc.<name>` — never as a bare top-level name, and never merged
+  into a single namespace with each other. Passing either straight through
+  as a bare render-context name would let it silently shadow one of HA's own
+  template globals (`states`, `now`, `area_id`, ...); merging the two into
+  one `jjb.<name>` (the original design) would instead let a per-`!include`
+  `vars:` override silently shadow a dashboard-level `variables:` entry of
+  the same name — keeping `globals`/`inc` as separate sub-namespaces avoids
+  that. `jinja2.utils.Namespace` (not a plain `dict`) is used for `jjb`,
+  `jjb.globals`, and `jjb.inc` specifically so a variable named e.g. `items`
+  can't be shadowed by `dict.items` itself — attribute access on a
   `Namespace` always resolves to the stored value, and still raises correctly
   under `strict=True` for a genuinely-undefined one (confirmed: Jinja's
   attribute-getter converts the resulting `AttributeError` into its own
@@ -286,11 +294,15 @@ wrong.
 `strategy.template` path is. Still always re-confined to stay under
 `config_dir` regardless of `base_dir`.
 
-**Variables**: an included file automatically inherits whatever `variables`
-the file that included it had (like Jinja's own `{% include %}` "with
+**Variables**: an included file automatically inherits whatever `jjb.inc`
+vars the file that included it had (like Jinja's own `{% include %}` "with
 context"), with an optional mapping form —
 `!include {path: x.yaml.j2, vars: {area_id: kitchen}}` — to layer on
-extra/overriding variables for that one include.
+extra/overriding vars for that one include and everything nested under it.
+The dashboard's own top-level `variables:` (`jjb.globals`) reach every
+included file unchanged regardless of nesting depth — they're threaded
+through as a separate value from `jjb.inc` and never merged with it, so a
+`vars:` override can never shadow a `jjb.globals` entry of the same name.
 
 **Cycle/depth guard**: `includes.py` threads a list of resolved absolute
 paths through every recursive call; a path already on the list raises

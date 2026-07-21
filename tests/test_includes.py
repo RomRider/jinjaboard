@@ -30,7 +30,7 @@ def test_include_scalar_form(hass: HomeAssistant, write_template) -> None:
 def test_include_mapping_form_with_vars_override(
     hass: HomeAssistant, write_template
 ) -> None:
-    write_template("greeting.yaml.j2", "content: Hello {{ jjb.area_id }}\n")
+    write_template("greeting.yaml.j2", "content: Hello {{ jjb.inc.area_id }}\n")
     root = write_template(
         "root.yaml.j2",
         "cards:\n  - !include {path: greeting.yaml.j2, vars: {area_id: kitchen}}\n",
@@ -39,10 +39,25 @@ def test_include_mapping_form_with_vars_override(
     assert result == {"cards": [{"content": "Hello kitchen"}]}
 
 
-def test_include_inherits_parent_variables_without_override(
+def test_include_inherits_parent_inc_vars_at_deeper_nesting(
     hass: HomeAssistant, write_template
 ) -> None:
-    write_template("greeting.yaml.j2", "content: Hello {{ jjb.area_id }}\n")
+    """A grandchild include with no `vars:` of its own still sees the
+    `jjb.inc` vars its parent include was given."""
+    write_template("greeting.yaml.j2", "content: Hello {{ jjb.inc.area_id }}\n")
+    write_template("wrapper.yaml.j2", "value: !include greeting.yaml.j2\n")
+    root = write_template(
+        "root.yaml.j2",
+        "cards:\n  - !include {path: wrapper.yaml.j2, vars: {area_id: kitchen}}\n",
+    )
+    result = _render(hass, root)
+    assert result == {"cards": [{"value": {"content": "Hello kitchen"}}]}
+
+
+def test_include_inherits_dashboard_globals(
+    hass: HomeAssistant, write_template
+) -> None:
+    write_template("greeting.yaml.j2", "content: Hello {{ jjb.globals.area_id }}\n")
     root = write_template("root.yaml.j2", "cards:\n  - !include greeting.yaml.j2\n")
     result = render_template(
         hass, root, root.read_text(), variables={"area_id": "living_room"}

@@ -32,7 +32,7 @@ def test_renders_plain_yaml_with_jinja(hass: HomeAssistant, write_template) -> N
 
 
 def test_variables_are_passed_through(hass: HomeAssistant, write_template) -> None:
-    path = write_template("greet.yaml.j2", "value: {{ jjb.name }}\n")
+    path = write_template("greet.yaml.j2", "value: {{ jjb.globals.name }}\n")
     result = render_template(hass, path, path.read_text(), variables={"name": "kitchen"})
     assert result == {"value": "kitchen"}
 
@@ -40,7 +40,7 @@ def test_variables_are_passed_through(hass: HomeAssistant, write_template) -> No
 def test_variables_are_not_exposed_as_bare_names(
     hass: HomeAssistant, write_template
 ) -> None:
-    """`variables` must only be reachable via `jjb.<name>` — a bare
+    """`variables` must only be reachable via `jjb.globals.<name>` — a bare
     top-level name would risk silently shadowing one of HA's own template
     globals, which is exactly what namespacing under `jjb` avoids."""
     path = write_template("greet.yaml.j2", "value: \"{{ name }}\"\n")
@@ -53,8 +53,9 @@ def test_variable_named_like_a_dict_method_is_not_shadowed(
     hass: HomeAssistant, write_template
 ) -> None:
     """A variable named e.g. `items` must resolve to its own value, not to
-    `dict.items` — the reason `jjb` is a `Namespace`, not a plain dict."""
-    path = write_template("greet.yaml.j2", "value: {{ jjb.items }}\n")
+    `dict.items` — the reason `jjb.globals`/`jjb.inc` are `Namespace`s, not
+    plain dicts."""
+    path = write_template("greet.yaml.j2", "value: {{ jjb.globals.items }}\n")
     result = render_template(hass, path, path.read_text(), variables={"items": "not a method"})
     assert result == {"value": "not a method"}
 
@@ -62,13 +63,13 @@ def test_variable_named_like_a_dict_method_is_not_shadowed(
 def test_undefined_jjb_variable_supports_default_and_is_defined(
     hass: HomeAssistant, write_template
 ) -> None:
-    """`jjb.<name> | default(...)` / `jjb.<name> is defined` must keep
-    working for a name that was never declared in `variables`, the same
-    guard idioms authors already rely on for plain undefined names."""
+    """`jjb.globals.<name> | default(...)` / `jjb.globals.<name> is defined`
+    must keep working for a name that was never declared in `variables`, the
+    same guard idioms authors already rely on for plain undefined names."""
     path = write_template(
         "defaults.yaml.j2",
-        "value: \"{{ jjb.maybe_unset | default('fallback') }}\"\n"
-        "flag: {{ jjb.maybe_unset is defined }}\n",
+        "value: \"{{ jjb.globals.maybe_unset | default('fallback') }}\"\n"
+        "flag: {{ jjb.globals.maybe_unset is defined }}\n",
     )
     result = render_template(hass, path, path.read_text(), variables={"name": "kitchen"})
     assert result == {"value": "fallback", "flag": False}

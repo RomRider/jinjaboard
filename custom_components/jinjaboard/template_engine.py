@@ -61,7 +61,10 @@ def _extract_lineno(err: TemplateError) -> int | None:
 
 
 def _render_jinja(
-    hass: HomeAssistant, source: str, variables: dict[str, Any] | None
+    hass: HomeAssistant,
+    source: str,
+    global_vars: dict[str, Any] | None,
+    inc_vars: dict[str, Any] | None,
 ) -> str:
     """Render `source` through Jinja, safe to call from any thread.
 
@@ -78,14 +81,17 @@ def _render_jinja(
     they take the direct branch, unchanged.
     """
     if threading.get_ident() == hass.loop_thread_id:
-        return _render_jinja_on_loop(hass, source, variables)
+        return _render_jinja_on_loop(hass, source, global_vars, inc_vars)
     return run_callback_threadsafe(
-        hass.loop, _render_jinja_on_loop, hass, source, variables
+        hass.loop, _render_jinja_on_loop, hass, source, global_vars, inc_vars
     ).result()
 
 
 def _render_jinja_on_loop(
-    hass: HomeAssistant, source: str, variables: dict[str, Any] | None
+    hass: HomeAssistant,
+    source: str,
+    global_vars: dict[str, Any] | None,
+    inc_vars: dict[str, Any] | None,
 ) -> str:
     """Render `source` through Jinja only, returning the raw rendered string.
 
@@ -101,21 +107,34 @@ def _render_jinja_on_loop(
     as a syntax error, so it reaches the dashboard's error card instead of
     only the HA log.
 
-    Dashboard-declared `variables` are exposed as `jjb.<name>`, not as bare
-    top-level names — HA's template environment already defines a large set
-    of its own globals (`states`, `now`, `area_id`, ...), and a `variables:`
-    entry that happened to reuse one of those names would silently shadow it
-    instead of erroring. `jinja2.utils.Namespace` (the same object `{% set ns
-    = namespace() %}` produces) is used rather than a plain dict so that a
-    variable named e.g. `items` or `get` can't be shadowed by dict's own
-    built-in methods of the same name — attribute access on a Namespace
-    always resolves to the stored value, and correctly raises under
-    `strict=True` for a genuinely undefined/misspelled one.
+    Dashboard-declared `variables` (`global_vars`) and `!include ... vars:`
+    (`inc_vars`) are exposed as `jjb.globals.<name>` / `jjb.inc.<name>`, not
+    as bare top-level names — HA's template environment already defines a
+    large set of its own globals (`states`, `now`, `area_id`, ...), and a
+    `variables:`/`vars:` entry that happened to reuse one of those names
+    would silently shadow it instead of erroring. They're also kept in two
+    separate sub-namespaces rather than one merged `jjb.<name>`: an
+    `!include`'s `vars:` used to be merged straight into the same dict as
+    the dashboard's own `variables`, which meant a per-include override
+    could silently shadow a dashboard-level variable of the same name.
+    `jinja2.utils.Namespace` (the same object `{% set ns = namespace() %}`
+    produces) is used for `jjb`, `jjb.globals`, and `jjb.inc` rather than a
+    plain dict so that a variable named e.g. `items` or `get` can't be
+    shadowed by dict's own built-in methods of the same name — attribute
+    access on a Namespace always resolves to the stored value, and correctly
+    raises under `strict=True` for a genuinely undefined/misspelled one.
     """
     template = Template(source, hass)
     try:
         return template.async_render(
-            {"jjb": Namespace(variables or {})}, parse_result=False, strict=True
+            {
+                "jjb": Namespace(
+                    globals=Namespace(global_vars or {}),
+                    inc=Namespace(inc_vars or {}),
+                )
+            },
+            parse_result=False,
+            strict=True,
         )
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
@@ -125,7 +144,8 @@ def _render_and_parse(
     hass: HomeAssistant,
     path: Path,
     source: str,
-    variables: dict[str, Any] | None,
+    global_vars: dict[str, Any] | None,
+    inc_vars: dict[str, Any] | None,
     include_stack: list[Path],
 ) -> Any:
     """Render `source` (already read from `path`) and parse it as YAML.
@@ -134,11 +154,16 @@ def _render_and_parse(
     `includes.py`'s tag constructors call back into this function for each
     included path (passed in as `render_and_parse`, not imported directly,
     to avoid a circular import between this module and `includes.py`).
+
+    `global_vars` is the dashboard's own `variables:`, constant for the
+    whole render tree. `inc_vars` accumulates `!include ... vars:` as the
+    tree is walked — see `includes.py`'s `_render_included_file` for how
+    it's layered.
     """
-    raw = _render_jinja(hass, source, variables)
+    raw = _render_jinja(hass, source, global_vars, inc_vars)
     try:
         return parse_with_includes(
-            hass, raw, path.parent, variables, include_stack, _render_and_parse
+            hass, raw, path.parent, global_vars, inc_vars, include_stack, _render_and_parse
         )
     except yaml.YAMLError as err:
         raise JinjaboardYamlError(raw) from err
@@ -163,6 +188,9 @@ def render_template(
 
     `path` anchors relative `!include` targets to this file's own directory
     (matching real Home Assistant's `!include`) and seeds the cycle-detection
-    stack.
+    stack. `variables` becomes the render tree's `jjb.globals` — no
+    `!include` has contributed `jjb.inc` vars yet, so that starts at `None`.
     """
-    return _render_and_parse(hass, path, source, variables, include_stack=[path.resolve()])
+    return _render_and_parse(
+        hass, path, source, variables, None, include_stack=[path.resolve()]
+    )
