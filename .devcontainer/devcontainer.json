@@ -14,7 +14,7 @@
     "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
     "source=ha-storage-${devcontainerId},target=/config/.storage,type=volume"
   ],
-  "postStartCommand": "bash .devcontainer/persist-claude.sh",
+  "postStartCommand": "bash .devcontainer/persist-claude.sh && bash .devcontainer/install-deps.sh",
   "customizations": {
     "vscode": {
       "extensions": [

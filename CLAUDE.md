@@ -15,25 +15,35 @@ examples — don't duplicate that here.
 
 ## Commands
 
-Backend tests (pytest + `pytest-homeassistant-custom-component`, isolated
-from the devcontainer's live HA venv):
+Backend tests (pytest + `pytest-homeassistant-custom-component`), run against
+the devcontainer's own live HA venv rather than a separate one — `uv pip
+install -p <python>` installs into whatever interpreter you point it at
+without needing `pip` present in the target venv, so there's no real
+isolation benefit to a second venv, and using the same one means test runs
+exercise the exact `homeassistant`/`home-assistant-frontend` versions the
+manually-verified instance runs too:
 ```bash
-uv venv .venv-test && uv pip install -r requirements-test.txt -p .venv-test
-.venv-test/bin/python -m pytest
+uv pip install -r requirements-test.txt -p /home/vscode/.local/ha-venv/bin/python
+/home/vscode/.local/ha-venv/bin/python -m pytest
 ```
-`pyproject.toml` pins `pythonpath = ["."]` — `custom_components/jinjaboard`
-is imported as a plain `import custom_components` by HA's loader (see
-`homeassistant/loader.py`'s `_get_custom_components`), resolved via
-`sys.path`, not `hass.config.config_dir` — this is unrelated to which
-directory `hass_config_dir` points at. `tests/conftest.py` overrides
-`hass_config_dir` to a fresh `tmp_path` per test (via the `hass_tmp_config_dir`
-fixture) rather than the shared package directory, since tests write their
-own template fixtures into it via the `write_template` fixture.
+`.devcontainer/install-deps.sh` runs this on every container start, so it
+normally doesn't need to be run by hand. `pyproject.toml` pins `pythonpath =
+["."]` — `custom_components/jinjaboard` is imported as a plain `import
+custom_components` by HA's loader (see `homeassistant/loader.py`'s
+`_get_custom_components`), resolved via `sys.path`, not `hass.config.
+config_dir` — this is unrelated to which directory `hass_config_dir` points
+at. `tests/conftest.py` overrides `hass_config_dir` to a fresh `tmp_path` per
+test (via the `hass_tmp_config_dir` fixture) rather than the shared package
+directory, since tests write their own template fixtures into it via the
+`write_template` fixture.
 `requirements-test.txt` pins exact versions matching what's installed in
 `/home/vscode/.local/ha-venv` (confirmed via PyPI metadata, not assumed) —
 `pytest-homeassistant-custom-component` pins its own `homeassistant` version,
 and `home-assistant-frontend` is needed separately because the `frontend`
-component (a manifest dependency) fails to set up without it.
+component (a manifest dependency) fails to set up without it. CI (see below)
+still installs into its own fresh, disposable runner venv — the
+shared-venv choice here is specific to the devcontainer, where
+`/home/vscode/.local/ha-venv` already exists and already matches the pins.
 
 Frontend (`src/`):
 ```bash

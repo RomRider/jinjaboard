@@ -211,17 +211,19 @@ workflow — don't commit it.
 
 ### Tests
 
-Backend (`pytest` + `pytest-homeassistant-custom-component`, in its own venv
-so it doesn't touch the devcontainer's live HA install):
+Backend (`pytest` + `pytest-homeassistant-custom-component`, installed into
+the devcontainer's own `/home/vscode/.local/ha-venv` — done automatically on
+container start, see `.devcontainer/install-deps.sh`):
 ```bash
-uv venv .venv-test && uv pip install -r requirements-test.txt -p .venv-test
-.venv-test/bin/python -m pytest
+uv pip install -r requirements-test.txt -p /home/vscode/.local/ha-venv/bin/python
+/home/vscode/.local/ha-venv/bin/python -m pytest
 ```
 Frontend (`vitest`):
 ```bash
 cd src && npm install && npm run test
 ```
-Both run in CI on every push and pull request.
+Both run in CI on every push and pull request (against a fresh, disposable
+runner venv, unrelated to the devcontainer's).
 
 ## Why not `add_extra_js_url`?
 

@@ -1,7 +1,13 @@
+{% set test = {'top': "top variable"} %}
+
 views:
   - title: Includes Demo
     cards:
       - !include header.yaml.j2
-      - !include {path: greeting.yaml.j2, vars: {area_id: kitchen}}
+      - !include
+          path: greeting.yaml.j2
+          vars:
+            area_id: kitchen
+            top: {{ test }}
   - title: Dir List
     cards: !include_dir_list cards
