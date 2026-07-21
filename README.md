@@ -88,6 +88,14 @@ apply around any `{% for %}` / `{% if %}` blocks — the same tradeoff
 [`yaml-jinja-highlight`](https://marketplace.visualstudio.com/items?itemName=samuelcolvin.jinjahtml)
 VS Code extension is a good companion for editing these.
 
+A whole-line YAML comment (`#` is the first non-whitespace character) is
+never handed to Jinja — so commenting out a line to disable it,
+`# - !include cards/lights.yaml.j2` or `# {{ some_var }}`, doesn't risk a
+`template_error` from code you meant to turn off. This doesn't apply to a
+trailing `key: value  # comment`, only a whole line, and it doesn't apply
+inside a `content: |`/`content: >` block scalar — a markdown card's literal
+`# Heading` stays exactly as written.
+
 ### 2. Create a dashboard that uses it
 
 Go to **Settings → Dashboards → Add Dashboard**, give it a name, then open it

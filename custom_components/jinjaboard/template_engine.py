@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,69 @@ def _extract_lineno(err: TemplateError) -> int | None:
             line = tb.tb_lineno
         tb = tb.tb_next
     return line
+
+
+# Matches a line that *starts* a YAML block scalar: `key: |`, `- >`,
+# `- key: |2-`, etc. — a `|`/`>` indicator, with optional chomping
+# (`+`/`-`) and explicit indentation digit in either order, as the last
+# thing on the line after an optional `- ` sequence marker and/or `key:`.
+_BLOCK_SCALAR_START_RE = re.compile(
+    r"^[ \t]*(?:-\s*)?(?:[^:\n]*:\s*)?[|>][+\-0-9]*[ \t]*$"
+)
+
+
+def _blank_out_comment_lines(source: str) -> str:
+    """Replace whole-line YAML comments with a blank line, before Jinja
+    ever sees `source`.
+
+    Motivation: `#` means nothing to Jinja, only to YAML — a line commented
+    out to disable it (`# - !include foo.yaml.j2`, `# {{ maybe_undefined
+    }}`) still gets its `{{ }}`/`{% %}` evaluated, so "dead" code could
+    still raise `UndefinedError`/`TemplateError`, which is surprising: the
+    author's intent was to remove that line from consideration entirely.
+
+    Comments are blanked, not deleted — the line count of `source` is
+    preserved exactly, so `_extract_lineno` and YAML-parse-error line
+    numbers still point at the right line in the original file with zero
+    extra bookkeeping.
+
+    This is a line-based heuristic, not a real YAML parse: this project's
+    own `{% for %}`-generated list/dict entries mean the pre-render source
+    is routinely not valid, tokenizable YAML at all, so a real
+    comment-aware scan isn't available before Jinja has already run. The
+    one YAML construct this still needs to respect is block scalars
+    (`content: |`, `content: >`, and their `- |`/`- >` sequence-entry
+    form) — markdown cards' `content: |` blocks routinely contain literal
+    `#` headings, and blanking those out would corrupt real card content,
+    not just suppress a comment. Only whole-line comments are recognized
+    (a line whose first non-whitespace character is `#`); a trailing
+    `key: value  # comment` is left untouched, since telling that `#` apart
+    from one inside a quoted scalar (`key: "a # b"`) needs real YAML
+    parsing this function deliberately doesn't do.
+    """
+    lines = source.splitlines(keepends=True)
+    out: list[str] = []
+    block_scalar_indent: int | None = None
+    for line in lines:
+        body = line.rstrip("\r\n")
+        indent = len(body) - len(body.lstrip(" \t"))
+        content = body.strip()
+
+        if block_scalar_indent is not None:
+            if content == "" or indent > block_scalar_indent:
+                out.append(line)
+                continue
+            block_scalar_indent = None  # scalar ended; re-check this line below
+
+        if content.startswith("#"):
+            out.append(line[len(body):])  # keep only the original line ending
+            continue
+
+        if _BLOCK_SCALAR_START_RE.match(body):
+            block_scalar_indent = indent
+
+        out.append(line)
+    return "".join(out)
 
 
 def _render_jinja(
@@ -123,8 +187,12 @@ def _render_jinja_on_loop(
     shadowed by dict's own built-in methods of the same name — attribute
     access on a Namespace always resolves to the stored value, and correctly
     raises under `strict=True` for a genuinely undefined/misspelled one.
+
+    `source` has whole-line YAML comments blanked out first (see
+    `_blank_out_comment_lines`) so a commented-out line's `{{ }}`/`{% %}`
+    doesn't raise for code the author meant to disable.
     """
-    template = Template(source, hass)
+    template = Template(_blank_out_comment_lines(source), hass)
     try:
         return template.async_render(
             {

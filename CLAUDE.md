@@ -202,6 +202,29 @@ Three more deliberate departures from the obvious approach, all load-bearing:
   on the loop thread (no executor job), so they exercise the direct branch,
   unchanged — this dual-mode dispatch is invisible to them.
 
+- Whole-line YAML comments are blanked out of `source` (see
+  `_blank_out_comment_lines`) before it ever reaches `Template(...)`, at the
+  single choke point `_render_jinja_on_loop` — root template and every
+  `!include`d file alike. Without this, `#` (meaningless to Jinja) let a
+  commented-out line's `{{ }}`/`{% %}` still raise, e.g. `# {{
+  some_undefined }}` or `# - !include broken.yaml.j2`, surprising for code
+  the author meant to disable. Lines are blanked, not deleted, so the line
+  count of `source` — and therefore every existing line-number-recovery path
+  (`_extract_lineno`, YAML-parse-error reporting) — needs no separate
+  remapping/counting logic. This is a line-based heuristic, not a real YAML
+  parse — this project's own `{% for %}`-generated entries mean the
+  pre-render source is routinely not valid, tokenizable YAML at all, so a
+  real comment-aware scan isn't available before Jinja has already run — but
+  it does track block scalars (`key: |`/`key: >`, incl. their `- |`/`- >`
+  sequence-entry form) well enough to leave a markdown card's literal `#
+  Heading` inside `content: |` untouched, since that's an extremely common
+  pattern in this project's domain and blanking it would corrupt real card
+  content, not just suppress a comment. Only a whole-line comment (`#` is
+  the line's first non-whitespace character) is recognized — a trailing
+  `key: value  # comment` is deliberately left alone, since telling that `#`
+  apart from one inside a quoted scalar (`key: "a # b"`) needs real YAML
+  parsing.
+
 ### Path resolution (`path_guard.py`)
 
 Every template/include path is relative to `hass.config.config_dir` (the

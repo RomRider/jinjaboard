@@ -54,6 +54,21 @@ def test_include_inherits_parent_inc_vars_at_deeper_nesting(
     assert result == {"cards": [{"value": {"content": "Hello kitchen"}}]}
 
 
+def test_commented_out_jinja_is_not_rendered_inside_an_include(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Whole-line comment blanking (see template_engine.py) applies to every
+    render in the tree, not just the root template — included files go
+    through the same `_render_jinja_on_loop` choke point."""
+    write_template(
+        "card.yaml.j2",
+        "type: markdown\n# {{ totally_undefined }}\ncontent: hi\n",
+    )
+    root = write_template("root.yaml.j2", "cards:\n  - !include card.yaml.j2\n")
+    result = _render(hass, root)
+    assert result == {"cards": [{"type": "markdown", "content": "hi"}]}
+
+
 def test_include_inherits_dashboard_globals(
     hass: HomeAssistant, write_template
 ) -> None:

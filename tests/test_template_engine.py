@@ -125,3 +125,96 @@ def test_strict_mode_does_not_break_default_filter(
     )
     result = render_template(hass, path, path.read_text())
     assert result == {"value": "fallback", "flag": False}
+
+
+def test_commented_out_jinja_is_not_rendered(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A whole-line YAML comment (`#...`) is meaningless to Jinja, so
+    `{{ totally_undefined }}` inside one used to still raise even though the
+    author's intent was to disable that line entirely."""
+    path = write_template(
+        "commented.yaml.j2",
+        "# - !include does_not_exist.yaml.j2\n"
+        "# {{ totally_undefined }}\n"
+        "value: 1\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"value": 1}
+
+
+def test_commented_out_jinja_preserves_line_numbers(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Comment lines are blanked, not deleted, so a real error further down
+    the file still reports its original line number."""
+    path = write_template(
+        "commented.yaml.j2",
+        "views:\n"
+        "  - title: fine\n"
+        "# a disabled line\n"
+        "  - title: \"{{ totally_undefined }}\"\n",
+    )
+    with pytest.raises(JinjaboardTemplateError) as excinfo:
+        render_template(hass, path, path.read_text())
+    assert excinfo.value.line == 4
+
+
+def test_indented_comment_line_is_blanked(
+    hass: HomeAssistant, write_template
+) -> None:
+    path = write_template(
+        "commented.yaml.j2",
+        "cards:\n"
+        "  - type: markdown\n"
+        "    # {{ totally_undefined }}\n"
+        "    content: hi\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"cards": [{"type": "markdown", "content": "hi"}]}
+
+
+def test_hash_inside_literal_block_scalar_is_not_treated_as_comment(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Markdown cards routinely use `content: |` with a literal `#`
+    heading — that must survive untouched, not get blanked out as if it
+    were a YAML comment."""
+    path = write_template(
+        "markdown.yaml.j2",
+        "content: |\n"
+        "  # Heading\n"
+        "  Some text\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"content": "# Heading\nSome text"}
+
+
+def test_hash_inside_sequence_entry_block_scalar_is_not_treated_as_comment(
+    hass: HomeAssistant, write_template
+) -> None:
+    path = write_template(
+        "markdown.yaml.j2",
+        "cards:\n"
+        "  - |\n"
+        "    # Heading\n"
+        "    Some text\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"cards": ["# Heading\nSome text"]}
+
+
+def test_trailing_inline_comment_is_left_untouched(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Only whole-line comments are recognized — a trailing `# comment`
+    after real content is out of scope (distinguishing it from a `#`
+    inside a quoted scalar needs real YAML parsing), so it's simply
+    rendered as part of the line like any other text, same as before this
+    feature existed."""
+    path = write_template(
+        "trailing.yaml.j2",
+        "value: 1 # not stripped, left for the YAML parser\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"value": 1}
