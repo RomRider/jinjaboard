@@ -56,7 +56,7 @@ install.
 
 Templates are plain YAML files with Jinja mixed in, living anywhere under
 your Home Assistant config directory (`/config`). For example,
-`/config/jinjaboard/home.yaml.j2`:
+`/config/jinjaboard/home.yaml`:
 
 ```yaml
 views:
@@ -77,9 +77,17 @@ apply around any `{% for %}` / `{% if %}` blocks. The
 [`yaml-jinja-highlight`](https://marketplace.visualstudio.com/items?itemName=samuelcolvin.jinjahtml)
 VS Code extension is a good companion for editing these.
 
+> [!NOTE]
+> This README names templates `.yaml` throughout for readability, but the
+> extension is just a convention — any path works as a `template:`,
+> `!include`, or `macros:` target. Naming a file `.yaml.j2` (or `.yml.j2`)
+> instead works identically, and has the extra benefit that editors like VS
+> Code recognize the `.j2` suffix automatically and apply Jinja+YAML syntax
+> highlighting without extra per-project configuration.
+
 A whole-line comment (`#` as the first non-whitespace character) is safe to
 use for commenting out Jinja you don't want evaluated, e.g.
-`# - !include cards/lights.yaml.j2` or `# {{ some_var }}`. This doesn't apply
+`# - !include cards/lights.yaml` or `# {{ some_var }}`. This doesn't apply
 to a trailing `key: value  # comment`, and it never touches a markdown card's
 `content: |` block, so a literal `# Heading` there is left alone.
 
@@ -92,7 +100,7 @@ with:
 ```yaml
 strategy:
   type: custom:jinjaboard
-  template: jinjaboard/home.yaml.j2
+  template: jinjaboard/home.yaml
   globals:
     some_var: 123
 ```
@@ -120,7 +128,7 @@ views:
   - title: Lights
     strategy:
       type: custom:jinjaboard
-      template: jinjaboard/lights_view.yaml.j2
+      template: jinjaboard/lights_view.yaml
       globals:
         some_var: 123
   - title: A normal, non-templated view
@@ -151,7 +159,7 @@ views:
       - column_span: 2
         strategy:
           type: custom:jinjaboard
-          template: jinjaboard/climate_section.yaml.j2
+          template: jinjaboard/climate_section.yaml
           globals:
             some_var: 123
 ```
@@ -191,7 +199,7 @@ nest arbitrarily deep.
 views:
   - title: Home
     cards:
-      - !include cards/header.yaml.j2
+      - !include cards/header.yaml
       - !include_dir_list cards/lights
   - title: Named example
     cards: !include_dir_merge_list cards/climate
@@ -200,7 +208,7 @@ views:
 A few things worth knowing:
 
 - **Paths are relative to the including file**, not the root template —
-  `cards/header.yaml.j2` inside `home.yaml.j2` resolves next to `home.yaml.j2`
+  `cards/header.yaml` inside `home.yaml` resolves next to `home.yaml`
   itself, matching real HA's `!include`.
 - **`vars:` are inherited separately from `globals:`.** An included file
   automatically sees whatever `vars:` the file that included it can see,
@@ -209,19 +217,19 @@ A few things worth knowing:
   it), use the mapping form instead of a bare path:
 
   ```yaml
-  - !include { path: cards/light.yaml.j2, vars: { area_id: kitchen } }
+  - !include { path: cards/light.yaml, vars: { area_id: kitchen } }
   ```
 
   Or if you prefer the block style:
 
   ```yaml
   - !include
-    path: cards/light.yaml.j2
+    path: cards/light.yaml
     vars:
       area_id: kitchen
   ```
 
-  `cards/light.yaml.j2` reads this as `{{ jjb.inc.area_id }}` — the
+  `cards/light.yaml` reads this as `{{ jjb.inc.area_id }}` — the
   dashboard's own `globals:` (`jjb.globals`) stay visible alongside it.
 
 - **Directory includes are recursive** and match `*.yaml`, `*.yml`,
@@ -256,9 +264,9 @@ Assistant config directory (like `template`, not like `!include`):
 ```yaml
 strategy:
   type: custom:jinjaboard
-  template: jinjaboard/home.yaml.j2
+  template: jinjaboard/home.yaml
   macros:
-    - jinjaboard/macros/common.yaml.j2   # a single file
+    - jinjaboard/macros/common.yaml   # a single file
     - jinjaboard/macros/kitchen/         # or a whole directory
 ```
 
@@ -267,7 +275,7 @@ Every macro from every declared file is callable directly as
 happens to live in doesn't matter to how it's called; a directory entry is
 walked recursively (same as `!include_dir_named`), and every macro from
 every matched file lands in the same flat `jjb.macros`. Given
-`jinjaboard/macros/common.yaml.j2`:
+`jinjaboard/macros/common.yaml`:
 
 ```yaml
 {% macro light_tile(entity_id) %}
@@ -311,12 +319,12 @@ If you're coming from `hass-lovelace_gen`, two things work differently:
   ```yaml
   # lovelace_gen
   - !include
-    - cards/light.yaml.j2
+    - cards/light.yaml
     - area_id: kitchen
 
   # JinjaBoard
   - !include
-    path: cards/light.yaml.j2
+    path: cards/light.yaml
     vars:
       area_id: kitchen
   ```
@@ -343,7 +351,7 @@ If you're coming from `hass-lovelace_gen`, two things work differently:
   # JinjaBoard (dashboard strategy)
   strategy:
     type: custom:jinjaboard
-    template: jinjaboard/home.yaml.j2
+    template: jinjaboard/home.yaml
     globals:
       some_var: 123
   # template
