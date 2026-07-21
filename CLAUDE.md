@@ -166,12 +166,33 @@ Three more deliberate departures from the obvious approach, all load-bearing:
   result-parsing uses `ast.literal_eval`, not `json.loads`/YAML — it doesn't
   matter for this project since we don't use it, but don't be tempted to rely
   on `parse_result=True` if refactoring this.
-- `Template.async_render` is a `@callback` — synchronous, runs inline on the
-  event loop despite the name. It's called directly (not offloaded to an
-  executor) to match the pattern HA core's own `render_template` WS command
-  uses. Large templates with heavy loops over `states()`/`areas()`/
-  `devices()` will block the loop for their render duration; there's no
-  timeout guard yet (planned: mirror `Template.async_render_will_timeout`).
+- `Template.async_render` is a `@callback` — synchronous, and its own
+  docstring states it "must be run in the event loop"; it can never move to
+  a worker thread. Large templates with heavy loops over `states()`/
+  `areas()`/`devices()` will still block the loop for their render duration;
+  there's no timeout guard yet (planned: mirror
+  `Template.async_render_will_timeout`).
+
+  `render_template` itself (and everything it calls — `_render_and_parse`,
+  `includes.parse_with_includes` and its `!include`/`!include_dir_*`
+  constructors) stays a plain **synchronous** function, unchanged in shape,
+  but `websocket.py` invokes it via
+  `await hass.async_add_executor_job(render_template, ...)` rather than
+  calling it directly — because `includes.py`'s constructors do blocking
+  file reads and `os.walk` directory scans (see "Includes" below), and
+  those must not run on the loop. This means the *whole* render tree
+  (including nested `!include`d files' own Jinja renders) executes on a
+  worker thread by the time `websocket.py` is involved — except the actual
+  `Template.async_render` call, which still can't. `_render_jinja` in
+  `template_engine.py` resolves this by checking
+  `threading.get_ident() == hass.loop_thread_id` — the same idiom
+  `homeassistant/core.py` itself uses for dual-mode functions like
+  `StateMachine.entity_ids`/`async_entity_ids` — and, only when actually off
+  the loop, hops back via
+  `homeassistant.util.async_.run_callback_threadsafe(hass.loop, ...)
+  .result()` for just that one call. Tests call `render_template` directly
+  on the loop thread (no executor job), so they exercise the direct branch,
+  unchanged — this dual-mode dispatch is invisible to them.
 
 ### Path resolution (`path_guard.py`)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from jinja2.utils import Namespace
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.template import Template
+from homeassistant.util.async_ import run_callback_threadsafe
 
 from .errors import JinjaboardTemplateError, JinjaboardYamlError
 from .includes import parse_with_includes
@@ -61,7 +63,34 @@ def _extract_lineno(err: TemplateError) -> int | None:
 def _render_jinja(
     hass: HomeAssistant, source: str, variables: dict[str, Any] | None
 ) -> str:
+    """Render `source` through Jinja, safe to call from any thread.
+
+    `render_template` (below) is invoked via `hass.async_add_executor_job`
+    from `websocket.py` so that the blocking file I/O `!include`/
+    `!include_dir_*` resolution does (see `includes.py`) doesn't run on the
+    event loop. But `_render_jinja_on_loop`'s `Template.async_render` call
+    must run on the loop regardless (its own docstring: "This method must
+    be run in the event loop"). So this checks which thread it's on —
+    the same idiom `homeassistant/core.py` itself uses in several places
+    (e.g. `StateMachine.entity_ids`/`async_entity_ids`) — and hops back via
+    `run_callback_threadsafe` only when actually off the loop. Tests call
+    `render_template` directly on the loop thread (no executor job), so
+    they take the direct branch, unchanged.
+    """
+    if threading.get_ident() == hass.loop_thread_id:
+        return _render_jinja_on_loop(hass, source, variables)
+    return run_callback_threadsafe(
+        hass.loop, _render_jinja_on_loop, hass, source, variables
+    ).result()
+
+
+def _render_jinja_on_loop(
+    hass: HomeAssistant, source: str, variables: dict[str, Any] | None
+) -> str:
     """Render `source` through Jinja only, returning the raw rendered string.
+
+    This method must be run in the event loop (see `_render_jinja` above) —
+    it calls `Template.async_render`, which requires it.
 
     `strict=True` is required: HA's default undefined-variable behavior
     (`LoggingUndefined`) just logs "Template variable warning" and renders

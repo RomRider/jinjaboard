@@ -62,7 +62,15 @@ async def handle_render(
         return
 
     try:
-        result = render_template(hass, path, source, variables)
+        # Off the loop: `!include`/`!include_dir_*` resolution does blocking
+        # file reads/directory walks (see includes.py). `render_template`
+        # stays a plain sync function — `_render_jinja` inside it detects
+        # it's no longer on the loop thread and hops back via
+        # `run_callback_threadsafe` for the one call that must stay there
+        # (`Template.async_render`).
+        result = await hass.async_add_executor_job(
+            render_template, hass, path, source, variables
+        )
     except JinjaboardPathError as err:
         # Raised here (rather than only by the resolve_config_path call
         # above) when an `!include`/`!include_dir_*` target inside the
