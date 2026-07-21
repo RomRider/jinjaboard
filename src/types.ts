@@ -5,6 +5,13 @@ export interface RenderRequest {
   macros?: string[];
 }
 
+export interface SubscribeRenderRequest {
+  type: "jinjaboard/subscribe_render";
+  template: string;
+  globals?: Record<string, unknown>;
+  macros?: string[];
+}
+
 export type JinjaboardErrorCode =
   | "path_missing"
   | "path_traversal"
@@ -18,9 +25,24 @@ export interface JinjaboardWsError {
   message: string;
 }
 
+/**
+ * A message pushed over a `jinjaboard/subscribe_render` subscription — the
+ * initial render and every subsequent one share this same shape (see
+ * `websocket.py`'s `handle_subscribe_render`: the ack carries no payload,
+ * home-assistant-js-websocket only ever forwards `event` messages to a
+ * `subscribeMessage` callback).
+ */
+export type JinjaboardSubscribeEvent = { result: unknown } | { error: JinjaboardWsError };
+
 /** Minimal shape of the `hass` object the strategy elements need. */
 export interface HomeAssistant {
   callWS<T>(msg: object): Promise<T>;
+  connection: {
+    subscribeMessage<T>(
+      callback: (result: T) => void,
+      message: object,
+    ): Promise<() => void>;
+  };
 }
 
 /**
@@ -38,4 +60,12 @@ export interface StrategyConfig {
   template?: string;
   globals?: Record<string, unknown>;
   macros?: string[];
+  /**
+   * Opt-in live re-render: when true, the dashboard/view/section pushes a
+   * fresh render whenever an entity/domain it actually depends on changes,
+   * and swaps it in live (no page reload) — default `false`. See
+   * `strategy-common.ts`'s `shouldRegenerateJinjaboard`/
+   * `getOrCreateSubscription` for how this is wired up.
+   */
+  auto_update?: boolean;
 }

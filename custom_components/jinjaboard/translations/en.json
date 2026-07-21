@@ -1,4 +1,11 @@
 {
+    "entity": {
+        "sensor": {
+            "render_signal": {
+                "name": "Render signal"
+            }
+        }
+    },
     "config": {
         "step": {
             "user": {

@@ -34,6 +34,7 @@ from typing import Any, Callable
 import yaml
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import TrackTemplate
 
 from .errors import (
     JinjaboardIncludeNotFoundError,
@@ -59,10 +60,10 @@ _DIR_INCLUDE_PATTERNS = ("*.yaml", "*.yml", "*.yaml.j2", "*.yml.j2")
 # HA's single `os.path.splitext` (which would leave `foo.yaml`).
 _TEMPLATE_EXTENSIONS = (".yaml.j2", ".yml.j2", ".yaml", ".yml", ".j2")
 
-# (hass, path, source, global_vars, inc_vars, macro_vars, include_stack) ->
-# parsed result. Injected rather than imported from template_engine.py to
-# avoid a circular import: template_engine.py imports parse_with_includes()
-# from this module.
+# (hass, path, source, global_vars, inc_vars, macro_vars, include_stack,
+# track_templates) -> parsed result. Injected rather than imported from
+# template_engine.py to avoid a circular import: template_engine.py imports
+# parse_with_includes() from this module.
 RenderAndParse = Callable[
     [
         HomeAssistant,
@@ -72,6 +73,7 @@ RenderAndParse = Callable[
         "dict[str, Any] | None",
         "dict[str, Any] | None",
         "list[Path]",
+        "list[TrackTemplate] | None",
     ],
     Any,
 ]
@@ -135,6 +137,7 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         macro_vars: dict[str, Any] | None,
         include_stack: list[Path],
         render_and_parse: RenderAndParse,
+        track_templates: list[TrackTemplate] | None = None,
     ) -> None:
         super().__init__(stream)
         self.hass = hass
@@ -144,6 +147,7 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         self.macro_vars = macro_vars
         self.include_stack = include_stack
         self.render_and_parse = render_and_parse
+        self.track_templates = track_templates
 
 
 def parse_with_includes(
@@ -155,6 +159,7 @@ def parse_with_includes(
     macro_vars: dict[str, Any] | None,
     include_stack: list[Path],
     render_and_parse: RenderAndParse,
+    track_templates: list[TrackTemplate] | None = None,
 ) -> Any:
     """Parse `text` (already Jinja-rendered), resolving include tags.
 
@@ -164,7 +169,9 @@ def parse_with_includes(
     `macro_vars` (the dashboard's `macros:`, exposed as `jjb.macros`) are
     carried through unchanged; `inc_vars` (exposed as `jjb.inc`) is what a
     nested `!include ... vars:` layers on top of, in `_render_included_file`
-    below.
+    below. `track_templates`, when given, is forwarded unchanged to every
+    included file's own `render_and_parse` call — see
+    `template_engine.py`'s `_render_jinja_on_loop` docstring.
     """
 
     def _make_loader(stream: Any) -> _JinjaboardYamlLoader:
@@ -177,6 +184,7 @@ def parse_with_includes(
             macro_vars=macro_vars,
             include_stack=include_stack,
             render_and_parse=render_and_parse,
+            track_templates=track_templates,
         )
 
     return yaml.load(text, Loader=_make_loader)
@@ -268,6 +276,7 @@ def _render_included_file(
             inc_vars,
             loader.macro_vars,
             [*loader.include_stack, target],
+            loader.track_templates,
         )
     except (JinjaboardTemplateError, JinjaboardYamlError, JinjaboardIncludeError) as err:
         err.args = (

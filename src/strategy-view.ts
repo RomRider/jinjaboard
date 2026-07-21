@@ -1,4 +1,4 @@
-import { createStrategyGenerate, errorCard } from "./strategy-common";
+import { createStrategyGenerate, errorCard, shouldRegenerateJinjaboard } from "./strategy-common";
 import type { JinjaboardWsError } from "./types";
 
 /**
@@ -13,6 +13,7 @@ import type { JinjaboardWsError } from "./types";
  */
 class LlStrategyViewJinjaboard extends HTMLElement {
   static generate = createStrategyGenerate(errorView);
+  static shouldRegenerate = shouldRegenerateJinjaboard;
 }
 
 function errorView(error: JinjaboardWsError) {

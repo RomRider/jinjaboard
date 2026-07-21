@@ -29,3 +29,9 @@ lovelace:
       title: JinjaBoard View/Section Test
       icon: mdi:view-grid-plus
       show_in_sidebar: true
+    jinjaboard-auto-update-test:
+      mode: yaml
+      filename: test/dashboards/jinjaboard-auto-update-test.yaml
+      title: JinjaBoard Auto Update Test
+      icon: mdi:flash
+      show_in_sidebar: true

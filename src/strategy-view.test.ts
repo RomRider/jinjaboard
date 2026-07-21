@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import "./strategy-view";
+import { shouldRegenerateJinjaboard } from "./strategy-common";
 import type { HomeAssistant, JinjaboardWsError } from "./types";
 
-function mockHass(callWS: HomeAssistant["callWS"]): HomeAssistant {
-  return { callWS };
+function mockHass(
+  callWS: HomeAssistant["callWS"],
+  subscribeMessage: HomeAssistant["connection"]["subscribeMessage"] = vi.fn(),
+): HomeAssistant {
+  return { callWS, connection: { subscribeMessage } };
 }
 
 type Generate = (config: unknown, hass: HomeAssistant) => Promise<any>;
@@ -28,6 +32,13 @@ describe("ll-strategy-view-jinjaboard", () => {
     expect(window.customStrategies ?? []).not.toContainEqual(
       expect.objectContaining({ strategyType: "view" }),
     );
+  });
+
+  it("wires static shouldRegenerate to the shared helper", () => {
+    const ElementClass = customElements.get("ll-strategy-view-jinjaboard") as unknown as {
+      shouldRegenerate: unknown;
+    };
+    expect(ElementClass.shouldRegenerate).toBe(shouldRegenerateJinjaboard);
   });
 
   it("returns a view-shaped error without calling callWS when template is missing", async () => {

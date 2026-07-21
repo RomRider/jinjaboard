@@ -41,13 +41,13 @@ This is under active development. Implemented so far:
 - ✅ Splitting a dashboard across multiple files with `!include` and friends,
   mirroring [Home Assistant's own config-splitting
   tags](https://www.home-assistant.io/docs/configuration/splitting_configuration/)
+- ✅ Opt-in live re-render on entity state change (`auto_update: true`, off
+  by default — see [Live updates](#live-updates-auto_update))
 
 Not yet implemented:
 
 - ⛔ A polished in-dashboard error panel (errors currently render as a plain
   markdown card)
-- ⛔ Automatic re-render on entity state change — for now, a dashboard only
-  re-renders when you open or refresh the page (see [Usage](#2-create-a-dashboard-that-uses-it))
 
 ## Installation
 
@@ -126,7 +126,8 @@ strategy:
 
 Save, and the dashboard renders your template's output. Re-opening the
 dashboard (or reloading the page) re-renders it — JinjaBoard doesn't
-re-render on every entity state change, only on demand.
+re-render on every entity state change unless you opt into
+[`auto_update`](#live-updates-auto_update).
 
 > [!TIP]
 > If you manage dashboards as files (`mode: yaml` in `configuration.yaml`'s
@@ -202,6 +203,49 @@ views:
 
 Same behavior as the view strategy, one level down: a render failure only
 shows an error card in that one section.
+
+### Live updates (`auto_update`)
+
+Add `auto_update: true` to a dashboard/view/section `strategy:` block to have
+it re-render live whenever an entity it actually depends on changes — no
+page reload, and no need to reopen the dashboard:
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: jinjaboard/home.yaml
+  auto_update: true
+```
+
+Default is `false`. The backend tracks exactly which entities/domains a
+render touched (across the whole `!include` tree) and only pushes a fresh
+render when one of those actually changes — the decision never happens by
+polling or diffing on the frontend.
+
+A few things worth knowing:
+
+- **A subscription stays open for the browser tab's connection lifetime**
+  once first triggered. There's no explicit "stop watching" when you
+  navigate away from an `auto_update` dashboard/view within the same
+  session — cleanup still happens for free when the WS connection itself
+  closes (tab closed, HA restarts).
+- **Unqualified `states`/broad iteration regenerates very frequently** —
+  the same well-known caveat as Home Assistant's own template sensors. If a
+  template calls something like `states | selectattr(...)` without
+  narrowing to specific entities, treat it as "regenerate on any state
+  change anywhere," not a targeted subscription.
+- **Adding/removing files under `!include_dir_*` doesn't by itself trigger
+  a re-render** — that's a directory listing change, not a tracked entity's
+  state changing.
+- **A small hidden diagnostic entity** (`sensor.render_signal`, disabled from
+  showing up in normal entity lists) gets bumped every time a render is
+  pushed. This isn't cosmetic — Home Assistant's Lovelace frontend only
+  ever re-checks a strategy for regeneration when its own `hass` object
+  changes, and a WS push by itself doesn't do that, so without something to
+  nudge it, an update would only be picked up whenever some unrelated
+  entity next happened to change (and could show a stale, previous render
+  in the meantime). Bumping this entity is what makes updates show up
+  immediately instead.
 
 ### Keeping a card's own live templating
 

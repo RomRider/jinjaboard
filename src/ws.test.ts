@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { renderTemplate } from "./ws";
+import { renderTemplate, subscribeRenderTemplate } from "./ws";
 import type { HomeAssistant } from "./types";
 
-function mockHass(callWS: HomeAssistant["callWS"]): HomeAssistant {
-  return { callWS };
+function mockHass(
+  callWS: HomeAssistant["callWS"],
+  subscribeMessage: HomeAssistant["connection"]["subscribeMessage"] = vi.fn(),
+): HomeAssistant {
+  return { callWS, connection: { subscribeMessage } };
 }
 
 describe("renderTemplate", () => {
@@ -60,5 +63,32 @@ describe("renderTemplate", () => {
     const hass = mockHass(vi.fn().mockRejectedValue(error));
 
     await expect(renderTemplate(hass, "home.yaml.j2")).rejects.toBe(error);
+  });
+});
+
+describe("subscribeRenderTemplate", () => {
+  it("calls hass.connection.subscribeMessage with the jinjaboard/subscribe_render request shape", async () => {
+    const subscribeMessage = vi.fn().mockResolvedValue(() => {});
+    const hass = mockHass(vi.fn(), subscribeMessage);
+    const callback = vi.fn();
+
+    await subscribeRenderTemplate(hass, "home.yaml.j2", { area_id: "kitchen" }, ["m.yaml.j2"], callback);
+
+    expect(subscribeMessage).toHaveBeenCalledWith(callback, {
+      type: "jinjaboard/subscribe_render",
+      template: "home.yaml.j2",
+      globals: { area_id: "kitchen" },
+      macros: ["m.yaml.j2"],
+    });
+  });
+
+  it("resolves with the unsubscribe function subscribeMessage returns", async () => {
+    const unsubscribe = vi.fn();
+    const subscribeMessage = vi.fn().mockResolvedValue(unsubscribe);
+    const hass = mockHass(vi.fn(), subscribeMessage);
+
+    await expect(subscribeRenderTemplate(hass, "home.yaml.j2", undefined, undefined, vi.fn())).resolves.toBe(
+      unsubscribe,
+    );
   });
 });
