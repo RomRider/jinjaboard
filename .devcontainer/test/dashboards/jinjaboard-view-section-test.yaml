@@ -1,0 +1,30 @@
+views:
+  - title: Plain view
+    cards:
+      - type: markdown
+        content: A normal, non-templated view.
+  - title: View strategy
+    strategy:
+      type: custom:jinjaboard
+      template: test/jinjaboard/view_test.yaml.j2
+      variables:
+        rooms:
+          - name: Living Room
+            temperature: 22
+          - name: Bedroom
+            temperature: 20
+  - title: Sections
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: markdown
+            content: A normal, non-templated section.
+      - column_span: 2
+        strategy:
+          type: custom:jinjaboard
+          template: test/jinjaboard/section_test.yaml.j2
+          variables:
+            rooms:
+              - name: Kitchen
+                temperature: 19

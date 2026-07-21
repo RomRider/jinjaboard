@@ -1,0 +1,5 @@
+cards:
+  {% for room in jjb.rooms %}
+  - type: markdown
+    content: "View strategy room: {{ room.name }}, {{ room.temperature }}°C"
+  {% endfor %}

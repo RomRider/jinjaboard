@@ -31,6 +31,10 @@ This is under active development. Implemented so far:
 - ✅ Templates authored as plain YAML with embedded Jinja (`{{ }}` / `{% %}`),
   the same convention `lovelace_gen` used
 - ✅ `ll-strategy-dashboard-jinjaboard` Lovelace dashboard strategy
+- ✅ `ll-strategy-view-jinjaboard` Lovelace view strategy (per-view, lazy
+  generation)
+- ✅ `ll-strategy-section-jinjaboard` Lovelace section strategy (per-section,
+  lazy generation)
 - ✅ Path-traversal guarding, typed error codes surfaced to the frontend
 - ✅ `!include`/`!include_dir_list`/`!include_dir_named`/`!include_dir_merge_list`/
   `!include_dir_merge_named` — splitting a dashboard across multiple files,
@@ -40,7 +44,6 @@ This is under active development. Implemented so far:
 Not yet implemented (see the project plan for the full milestone list):
 
 - ⛔ Root-level `vars:` block
-- ⛔ `ll-strategy-view-jinjaboard` (per-view, lazy generation)
 - ⛔ Render caching
 - ⛔ A polished in-dashboard error panel (errors currently render as a plain
   markdown card)
@@ -112,6 +115,60 @@ Save, and the dashboard renders your template's output. Re-opening the
 dashboard (or reloading the page) re-renders it — JinjaBoard does not
 re-render on every entity state change, only on demand.
 
+### 3. Use it as a view strategy
+
+A `strategy:` can also be attached to a single view instead of the whole
+dashboard — useful when only one view in an otherwise hand-authored
+dashboard needs templating:
+
+```yaml
+views:
+  - title: Lights
+    strategy:
+      type: custom:jinjaboard
+      template: jinjaboard/lights_view.yaml.j2
+      variables:
+        some_var: 123
+  - title: A normal, non-templated view
+    cards:
+      - type: markdown
+        content: Nothing fancy here.
+```
+
+The template's rendered output replaces the view's own content (typically a
+`cards:` list, optionally other view-level keys). Any sibling key already on
+the view (`title`, `path`, `icon`, ...) is kept unless the render's own
+output defines the same key, in which case the render wins. A render
+failure in this view only shows an error card in that one view — the rest
+of the dashboard, and any other views, are unaffected.
+
+### 4. Use it as a section strategy
+
+Inside a `type: sections` view, an individual section can likewise be
+templated instead of the whole view:
+
+```yaml
+views:
+  - title: Home
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: markdown
+            content: A normal, non-templated section.
+      - column_span: 2
+        strategy:
+          type: custom:jinjaboard
+          template: jinjaboard/climate_section.yaml.j2
+          variables:
+            some_var: 123
+```
+
+Same merge and error-isolation behavior as the view strategy, one level
+down: sibling keys on the section (`column_span`, `title`, ...) are kept
+unless the render's output overrides them, and a render failure only shows
+an error card in that one section.
+
 ### Keeping a card's own live templating
 
 Cards with native runtime templating — the markdown card's `content`, the
@@ -182,8 +239,9 @@ A few things that differ from a plain HA config file, worth knowing:
 
 ## Error handling
 
-If a template fails to render or produces invalid YAML, the dashboard shows
-a markdown card with the error instead of a blank screen. Error codes:
+If a template fails to render or produces invalid YAML, the affected
+dashboard, view, or section shows a markdown card with the error instead of
+a blank screen. Error codes:
 
 | Code | Meaning |
 |---|---|

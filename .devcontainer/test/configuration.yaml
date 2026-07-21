@@ -23,3 +23,9 @@ lovelace:
       title: JinjaBoard Includes Test
       icon: mdi:file-tree
       show_in_sidebar: true
+    jinjaboard-view-section-test:
+      mode: yaml
+      filename: test/dashboards/jinjaboard-view-section-test.yaml
+      title: JinjaBoard View/Section Test
+      icon: mdi:view-grid-plus
+      show_in_sidebar: true

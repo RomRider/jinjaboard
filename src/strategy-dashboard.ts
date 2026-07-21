@@ -1,5 +1,5 @@
-import { renderDashboard } from "./ws";
-import type { HomeAssistant, JinjaboardWsError, StrategyConfig } from "./types";
+import { createStrategyGenerate, errorCard } from "./strategy-common";
+import type { JinjaboardWsError } from "./types";
 
 /**
  * `ll-strategy-dashboard-jinjaboard`: generates a full Lovelace dashboard by
@@ -10,23 +10,7 @@ import type { HomeAssistant, JinjaboardWsError, StrategyConfig } from "./types";
  * DOM itself, so this only needs to exist as a registered custom element.
  */
 class LlStrategyDashboardJinjaboard extends HTMLElement {
-  static async generate(config: StrategyConfig, hass: HomeAssistant): Promise<unknown> {
-    const template = config?.template;
-    if (!template) {
-      return errorDashboard({
-        code: "template_error",
-        message:
-          "jinjaboard strategy: options.template is required (a path to the " +
-          "template file, relative to the Home Assistant config directory).",
-      });
-    }
-
-    try {
-      return await renderDashboard(hass, template, config?.variables);
-    } catch (err) {
-      return errorDashboard(err as JinjaboardWsError);
-    }
-  }
+  static generate = createStrategyGenerate(errorDashboard);
 }
 
 // Full error-code-aware rendering lands in error-panel.ts (M6); this is a
@@ -36,12 +20,7 @@ function errorDashboard(error: JinjaboardWsError) {
     views: [
       {
         title: "JinjaBoard error",
-        cards: [
-          {
-            type: "markdown",
-            content: `## JinjaBoard render error\n\n**${error.code ?? "error"}**\n\n${error.message ?? String(error)}`,
-          },
-        ],
+        cards: [errorCard(error)],
       },
     ],
   };

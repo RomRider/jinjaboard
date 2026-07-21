@@ -7,7 +7,7 @@ import type { HomeAssistant, RenderRequest } from "./types";
  * raw `{code, message}` error object sent by `connection.send_error` on the
  * backend — matches `JinjaboardWsError` in types.ts, no translation needed.
  */
-export function renderDashboard(
+export function renderTemplate(
   hass: HomeAssistant,
   template: string,
   variables?: Record<string, unknown>,
