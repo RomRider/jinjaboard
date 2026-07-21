@@ -2,3 +2,4 @@
 **/node_modules
 custom_components/jinjaboard/www/
 .pytest_cache/
+.claude
