@@ -9,6 +9,11 @@ debugpy:
 logger:
   default: warning
 
+recorder:
+  exclude:
+    entities:
+      - sensor.jinjaboard_render_signal
+
 lovelace:
   dashboards:
     jinjaboard-test:

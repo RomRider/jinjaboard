@@ -1,3 +1,4 @@
 strategy:
   type: custom:jinjaboard
   template: test/jinjaboard/includes/root_include.yaml.j2
+  auto_update: true

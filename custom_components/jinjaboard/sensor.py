@@ -60,6 +60,17 @@ class JinjaboardRenderSignal(SensorEntity):
     the state changes this whole mechanism depends on.
     """
 
+    # `has_entity_name` + `translation_key` (rather than a plain `_attr_name`
+    # string) is the modern, correct pattern — but for a device-less entity
+    # it also means the *translated name itself* is what determines the
+    # entity_id slug: `Entity.suggested_object_id` only ever feeds
+    # `object_id_base`, which loses to the translated name in HA's own
+    # entity-id-generation priority order (`name` override > `suggested_
+    # object_id` — reserved for `internal_integration_suggested_object_id`,
+    # not settable by third-party components — > `object_id_base`). So the
+    # translation string (translations/en.json) is deliberately "Jinjaboard
+    # render signal", not just "Render signal", to get `sensor.jinjaboard_
+    # render_signal` rather than a bare `sensor.render_signal`.
     _attr_has_entity_name = True
     _attr_translation_key = "render_signal"
     _attr_entity_category = EntityCategory.DIAGNOSTIC

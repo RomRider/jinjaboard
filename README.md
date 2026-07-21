@@ -237,8 +237,8 @@ A few things worth knowing:
 - **Adding/removing files under `!include_dir_*` doesn't by itself trigger
   a re-render** — that's a directory listing change, not a tracked entity's
   state changing.
-- **A small hidden diagnostic entity** (`sensor.render_signal`, disabled from
-  showing up in normal entity lists) gets bumped every time a render is
+- **A small hidden diagnostic entity** (`sensor.jinjaboard_render_signal`,
+  excluded from normal entity lists) gets bumped every time a render is
   pushed. This isn't cosmetic — Home Assistant's Lovelace frontend only
   ever re-checks a strategy for regeneration when its own `hass` object
   changes, and a WS push by itself doesn't do that, so without something to
@@ -246,6 +246,20 @@ A few things worth knowing:
   entity next happened to change (and could show a stale, previous render
   in the meantime). Bumping this entity is what makes updates show up
   immediately instead.
+
+  > [!TIP]
+  > Being hidden/diagnostic keeps it out of dashboards and default entity
+  > pickers, but Home Assistant records history for every entity by
+  > default regardless of that — there's no integration-level way to opt
+  > an entity out of the recorder, by design. If you'd rather it not show
+  > up in History/Logbook at all, exclude it yourself:
+  >
+  > ```yaml
+  > recorder:
+  >   exclude:
+  >     entities:
+  >       - sensor.jinjaboard_render_signal
+  > ```
 
 ### Keeping a card's own live templating
 
