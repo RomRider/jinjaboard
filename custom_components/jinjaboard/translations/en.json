@@ -3,7 +3,11 @@
         "step": {
             "user": {
                 "title": "Set up JinjaBoard",
-                "description": "JinjaBoard renders Jinja2-templated Lovelace dashboards from files on disk. After setup, create a dashboard and set its YAML content to a `strategy` block pointing at your template file — see the README for an example. The frontend resource is registered automatically; no manual Resources step needed."
+                "description": "JinjaBoard renders Jinja2-templated Lovelace dashboards from files on disk. After setup, create a dashboard and set its YAML content to a `strategy` block pointing at your template file — see the README for an example. The frontend resource is registered automatically if Lovelace uses storage-mode resources; if it's YAML-mode, the next step will show what to add."
+            },
+            "yaml_resources": {
+                "title": "Add the frontend resource manually",
+                "description": "Lovelace is running in YAML resource mode, so JinjaBoard can't register its frontend module automatically. Add this to your `configuration.yaml` and restart Home Assistant:\n\n```yaml\nlovelace:\n  resources:\n    - url: {resource_url}\n      type: module\n```"
             }
         }
     }

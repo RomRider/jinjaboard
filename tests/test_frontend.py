@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
 from custom_components.jinjaboard.frontend import (
-    _STATIC_URL_PATH,
+    STATIC_URL_PATH,
     _async_ensure_lovelace_resource,
     async_register_frontend,
 )
@@ -29,7 +29,7 @@ async def test_registers_static_path(hass: HomeAssistant) -> None:
     mock_register.assert_awaited_once()
     (configs,) = mock_register.await_args.args
     assert len(configs) == 1
-    assert configs[0].url_path == _STATIC_URL_PATH
+    assert configs[0].url_path == STATIC_URL_PATH
 
 
 async def test_lovelace_resource_registered_once_on_entry_setup(
@@ -38,7 +38,7 @@ async def test_lovelace_resource_registered_once_on_entry_setup(
     from homeassistant.components.lovelace.const import LOVELACE_DATA
 
     resources = hass.data[LOVELACE_DATA].resources
-    matching = [item for item in resources.async_items() if item["url"] == _STATIC_URL_PATH]
+    matching = [item for item in resources.async_items() if item["url"] == STATIC_URL_PATH]
     assert len(matching) == 1
 
 
@@ -51,7 +51,7 @@ async def test_lovelace_resource_registration_is_idempotent(
     await _async_ensure_lovelace_resource(hass)
 
     resources = hass.data[LOVELACE_DATA].resources
-    matching = [item for item in resources.async_items() if item["url"] == _STATIC_URL_PATH]
+    matching = [item for item in resources.async_items() if item["url"] == STATIC_URL_PATH]
     assert len(matching) == 1
 
 
