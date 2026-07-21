@@ -21,6 +21,14 @@ install: install-backend install-frontend
 
 install-backend:
 	uv pip install -r requirements-test.txt -p $(PYTHON)
+	# home-assistant-frontend isn't a pip dependency of the `homeassistant`
+	# package itself (HA's own requirements-installer resolves it lazily at
+	# runtime from the `frontend` component's manifest.json) but our tests
+	# need it present up front. Read the exact version HA's own manifest
+	# wants for whichever `homeassistant` version just got installed above,
+	# rather than hand-pinning a second version number that can silently
+	# drift out of sync with the first (as happened once already).
+	uv pip install "$$($(PYTHON) -c 'import json, pathlib, homeassistant.components.frontend as f; print(json.loads(pathlib.Path(f.__file__).with_name("manifest.json").read_text())["requirements"][0])')" -p $(PYTHON)
 
 install-frontend:
 	cd src && npm install

@@ -10,3 +10,4 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 make install
+sudo apt update && sudo apt install -y --no-install-recommends gh

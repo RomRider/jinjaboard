@@ -30,27 +30,39 @@ isolation benefit to a second venv, and using the same one means test runs
 exercise the exact `homeassistant`/`home-assistant-frontend` versions the
 manually-verified instance runs too:
 ```bash
-uv pip install -r requirements-test.txt -p /home/vscode/.local/ha-venv/bin/python
+make install-backend PYTHON=/home/vscode/.local/ha-venv/bin/python
 /home/vscode/.local/ha-venv/bin/python -m pytest
 ```
-`.devcontainer/install-deps.sh` runs this on every container start, so it
-normally doesn't need to be run by hand. `pyproject.toml` pins `pythonpath =
-["."]` — `custom_components/jinjaboard` is imported as a plain `import
-custom_components` by HA's loader (see `homeassistant/loader.py`'s
+`.devcontainer/install-deps.sh` runs `make install` on every container
+start, so it normally doesn't need to be run by hand. `pyproject.toml` pins
+`pythonpath = ["."]` — `custom_components/jinjaboard` is imported as a plain
+`import custom_components` by HA's loader (see `homeassistant/loader.py`'s
 `_get_custom_components`), resolved via `sys.path`, not `hass.config.
 config_dir` — this is unrelated to which directory `hass_config_dir` points
 at. `tests/conftest.py` overrides `hass_config_dir` to a fresh `tmp_path` per
 test (via the `hass_tmp_config_dir` fixture) rather than the shared package
 directory, since tests write their own template fixtures into it via the
 `write_template` fixture.
-`requirements-test.txt` pins exact versions matching what's installed in
-`/home/vscode/.local/ha-venv` (confirmed via PyPI metadata, not assumed) —
-`pytest-homeassistant-custom-component` pins its own `homeassistant` version,
-and `home-assistant-frontend` is needed separately because the `frontend`
-component (a manifest dependency) fails to set up without it. CI (see below)
-still installs into its own fresh, disposable runner venv — the
-shared-venv choice here is specific to the devcontainer, where
-`/home/vscode/.local/ha-venv` already exists and already matches the pins.
+
+**Keeping HA-version-dependent pins in sync**: `requirements-test.txt` pins
+only `pytest-homeassistant-custom-component`, which transitively pins the
+exact `homeassistant` version it was built against — bump this one line to
+move to a newer HA release (check PyPI for a release whose own pin matches
+the target). `home-assistant-frontend` is a second, independent requirement
+(the `frontend` component, a manifest dependency, fails to set up without
+it) but is **not** hand-pinned — `homeassistant`'s PyPI package doesn't
+declare it as an install dependency at all (HA's own requirements-installer
+resolves it lazily at runtime from `homeassistant/components/frontend/
+manifest.json`'s `requirements` field), so the Makefile's `install-backend`
+target reads that manifest from whatever `homeassistant` version just got
+installed and installs exactly what it asks for. This used to be a second
+hand-copied version pin in this file, and it silently drifted out of sync
+with the first once already (broke CI while local devcontainer runs kept
+passing, because `/home/vscode/.local/ha-venv` already had a copy baked in
+from the base image) — deriving it avoids that failure mode recurring. CI
+(see below) installs into its own fresh, disposable runner venv, so it goes
+through the same derivation on every run, with nothing pre-baked to mask a
+missing pin.
 
 Frontend (`src/`):
 ```bash

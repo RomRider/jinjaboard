@@ -12,8 +12,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: pip install -r requirements-test.txt
-      - run: make test-backend PYTHON=python
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - run: make install-backend test-backend PYTHON=python
 
   vitest:
     runs-on: ubuntu-latest
