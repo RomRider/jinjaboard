@@ -53,6 +53,8 @@ Not yet implemented (see the project plan for the full milestone list):
 Via [HACS](https://hacs.xyz/): add this repository as a custom repository
 (category: Integration), then install "JinjaBoard".
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RomRider&repository=jinjaboard&category=integration)
+
 After installing, go to **Settings → Devices & Services → Add Integration**
 and add **JinjaBoard**. There's nothing to configure — this step just enables
 the integration (registers the WebSocket command and the frontend resource).
@@ -172,7 +174,7 @@ an error card in that one section.
 ### Keeping a card's own live templating
 
 Cards with native runtime templating — the markdown card's `content`, the
-template card, tile card features — should have their Jinja stay *live*,
+template card, tile card features — should have their Jinja stay _live_,
 evaluated by the card itself, not baked in at generation time. Wrap those
 blocks in Jinja's own `{% raw %}...{% endraw %}` tag:
 
@@ -222,7 +224,7 @@ A few things that differ from a plain HA config file, worth knowing:
   something extra (or override a value) for just that one include, use the
   mapping form instead of a bare path:
   ```yaml
-  - !include {path: cards/light.yaml.j2, vars: {area_id: kitchen}}
+  - !include { path: cards/light.yaml.j2, vars: { area_id: kitchen } }
   ```
   Same `jjb.` namespacing as the root template's `variables:` applies —
   `cards/light.yaml.j2` reads this as `{{ jjb.area_id }}`.
@@ -243,14 +245,14 @@ If a template fails to render or produces invalid YAML, the affected
 dashboard, view, or section shows a markdown card with the error instead of
 a blank screen. Error codes:
 
-| Code | Meaning |
-|---|---|
-| `path_missing` | The root template file doesn't exist or can't be read |
-| `path_traversal` | The root template, or an `!include`/`!include_dir_*` target inside it, resolves outside the Home Assistant config directory |
-| `include_not_found` | An `!include`d file doesn't exist |
-| `template_error` | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include cycle / excessive include depth was detected — the message includes the template source line number where possible, and for nested includes, which file it happened in |
-| `yaml_parse_error` | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block, or an unrecognized `!tag` |
-| `render_timeout` | (planned) rendering took too long |
+| Code                | Meaning                                                                                                                                                                                                                                                     |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path_missing`      | The root template file doesn't exist or can't be read                                                                                                                                                                                                       |
+| `path_traversal`    | The root template, or an `!include`/`!include_dir_*` target inside it, resolves outside the Home Assistant config directory                                                                                                                                 |
+| `include_not_found` | An `!include`d file doesn't exist                                                                                                                                                                                                                           |
+| `template_error`    | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include cycle / excessive include depth was detected — the message includes the template source line number where possible, and for nested includes, which file it happened in |
+| `yaml_parse_error`  | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block, or an unrecognized `!tag`                                                                                                      |
+| `render_timeout`    | (planned) rendering took too long                                                                                                                                                                                                                           |
 
 ## Development
 
@@ -279,14 +281,18 @@ workflow — don't commit it.
 Backend (`pytest` + `pytest-homeassistant-custom-component`, installed into
 the devcontainer's own `/home/vscode/.local/ha-venv` — done automatically on
 container start, see `.devcontainer/install-deps.sh`):
+
 ```bash
 uv pip install -r requirements-test.txt -p /home/vscode/.local/ha-venv/bin/python
 /home/vscode/.local/ha-venv/bin/python -m pytest
 ```
+
 Frontend (`vitest`):
+
 ```bash
 cd src && npm install && npm run test
 ```
+
 Both run in CI on every push and pull request (against a fresh, disposable
 runner venv, unrelated to the devcontainer's).
 
