@@ -35,6 +35,41 @@ async def test_render_passes_globals(
     assert response["result"] == {"value": "kitchen"}
 
 
+async def test_render_passes_macros(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("macros/greet.yaml.j2", "{% macro hi(name) %}Hi {{ name }}{% endmacro %}\n")
+    write_template("root.yaml.j2", "value: \"{{ jjb.macros.hi('kitchen') }}\"\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "root.yaml.j2",
+            "macros": ["macros/greet.yaml.j2"],
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"value": "Hi kitchen"}
+
+
+async def test_render_macro_not_found(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("root.yaml.j2", "ok: true\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "root.yaml.j2",
+            "macros": ["macros/missing.yaml.j2"],
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "include_not_found"
+
+
 async def test_render_available_to_non_admin_user(
     hass: HomeAssistant,
     config_entry,

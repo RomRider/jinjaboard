@@ -34,6 +34,20 @@ describe("renderTemplate", () => {
     });
   });
 
+  it("includes macros when given", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const hass = mockHass(callWS);
+
+    await renderTemplate(hass, "home.yaml.j2", undefined, ["macros/common.yaml.j2"]);
+
+    expect(callWS).toHaveBeenCalledWith({
+      type: "jinjaboard/render",
+      template: "home.yaml.j2",
+      globals: undefined,
+      macros: ["macros/common.yaml.j2"],
+    });
+  });
+
   it("resolves with the WS result on success", async () => {
     const result = { views: [{ title: "Home" }] };
     const hass = mockHass(vi.fn().mockResolvedValue(result));

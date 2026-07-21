@@ -33,6 +33,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
         vol.Required("type"): "jinjaboard/render",
         vol.Required("template"): str,
         vol.Optional("globals"): dict,
+        vol.Optional("macros"): [str],
     }
 )
 @websocket_api.async_response
@@ -44,6 +45,7 @@ async def handle_render(
     """Handle jinjaboard/render: resolve, read, and render a template file."""
     relative_path = msg["template"]
     global_vars = msg.get("globals")
+    macro_paths = msg.get("macros")
 
     try:
         path = resolve_config_path(hass, relative_path)
@@ -69,15 +71,17 @@ async def handle_render(
         # `run_callback_threadsafe` for the one call that must stay there
         # (`Template.async_render`).
         result = await hass.async_add_executor_job(
-            render_template, hass, path, source, global_vars
+            render_template, hass, path, source, global_vars, macro_paths
         )
     except JinjaboardPathError as err:
         # Raised here (rather than only by the resolve_config_path call
-        # above) when an `!include`/`!include_dir_*` target inside the
-        # template resolves outside config_dir.
+        # above) when an `!include`/`!include_dir_*` target, or a `macros:`
+        # entry, resolves outside config_dir.
         connection.send_error(msg["id"], "path_traversal", str(err))
         return
     except JinjaboardIncludeNotFoundError as err:
+        # Also covers a missing/unreadable `macros:` file or directory —
+        # same "referenced file wasn't found" shape as a missing `!include`.
         connection.send_error(msg["id"], "include_not_found", str(err))
         return
     except JinjaboardTemplateError as err:

@@ -233,6 +233,72 @@ A few things worth knowing:
 - Circular includes and excessively deep include chains fail with a clear
   error naming the chain, rather than hanging or crashing.
 
+### Macros
+
+Jinja's own `{% macro %}...{% endmacro %}` works out of the box, within a
+single file — root template or one `!include`d file:
+
+```yaml
+{% macro light_tile(entity_id) %}
+type: tile
+entity: {{ entity_id }}
+{% endmacro %}
+views:
+  - title: Home
+    cards:
+      {{ light_tile('light.kitchen') }}
+```
+
+To reuse a macro **across files**, declare it under the strategy's `macros:`
+key — a list of files and/or directories, resolved relative to the Home
+Assistant config directory (like `template`, not like `!include`):
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: jinjaboard/home.yaml.j2
+  macros:
+    - jinjaboard/macros/common.yaml.j2   # a single file
+    - jinjaboard/macros/kitchen/         # or a whole directory
+```
+
+Every macro from every declared file is callable directly as
+`jjb.macros.<macro>(...)` — flattened across files, so which file a macro
+happens to live in doesn't matter to how it's called; a directory entry is
+walked recursively (same as `!include_dir_named`), and every macro from
+every matched file lands in the same flat `jjb.macros`. Given
+`jinjaboard/macros/common.yaml.j2`:
+
+```yaml
+{% macro light_tile(entity_id) %}
+type: tile
+entity: {{ entity_id }}
+{% endmacro %}
+```
+
+any file in the render tree — the root template or any `!include`d file —
+can call it:
+
+```yaml
+views:
+  - title: Home
+    cards:
+      {{ jjb.macros.light_tile('light.kitchen') }}
+```
+
+A few things worth knowing:
+
+- **A macro file only sees `jjb.globals`, never `jjb.inc`.** Macro files are
+  compiled once, up front, before any `!include` is walked, so there's no
+  tree position to give it an `jjb.inc` value for — referencing
+  `jjb.inc.<name>` inside a macro body raises `template_error`.
+- **Two declared files defining a macro of the same name is an error**, not
+  a silent shadow — rename one of the macros rather than relying on entry
+  order. Filenames themselves never collide (they're not part of
+  `jjb.macros`'s namespace), only the macro names inside them.
+- A missing macro file or directory surfaces the same `include_not_found`
+  error as a missing `!include` target.
+
 ## Migrating from lovelace_gen
 
 If you're coming from `hass-lovelace_gen`, two things work differently:

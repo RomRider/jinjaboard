@@ -17,6 +17,7 @@ from homeassistant.util.async_ import run_callback_threadsafe
 
 from .errors import JinjaboardTemplateError, JinjaboardYamlError
 from .includes import parse_with_includes
+from .macros import build_macro_namespace
 
 # Re-exported for websocket.py / callers that only need the exception types,
 # so most of the codebase can import them from here rather than .errors.
@@ -129,6 +130,7 @@ def _render_jinja(
     source: str,
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
+    macro_vars: dict[str, Any] | None,
 ) -> str:
     """Render `source` through Jinja, safe to call from any thread.
 
@@ -145,9 +147,15 @@ def _render_jinja(
     they take the direct branch, unchanged.
     """
     if threading.get_ident() == hass.loop_thread_id:
-        return _render_jinja_on_loop(hass, source, global_vars, inc_vars)
+        return _render_jinja_on_loop(hass, source, global_vars, inc_vars, macro_vars)
     return run_callback_threadsafe(
-        hass.loop, _render_jinja_on_loop, hass, source, global_vars, inc_vars
+        hass.loop,
+        _render_jinja_on_loop,
+        hass,
+        source,
+        global_vars,
+        inc_vars,
+        macro_vars,
     ).result()
 
 
@@ -156,6 +164,7 @@ def _render_jinja_on_loop(
     source: str,
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
+    macro_vars: dict[str, Any] | None,
 ) -> str:
     """Render `source` through Jinja only, returning the raw rendered string.
 
@@ -188,6 +197,13 @@ def _render_jinja_on_loop(
     access on a Namespace always resolves to the stored value, and correctly
     raises under `strict=True` for a genuinely undefined/misspelled one.
 
+    `macro_vars` (dashboard-declared `macros:`, see `macros.py`) is exposed
+    the same way, as `jjb.macros.<macro_name>(...)` — flattened across every
+    declared file by `macros.build_macro_namespace`, so which file a macro
+    was defined in doesn't matter to how it's called. Wrapping the flat
+    `{name: Macro}` dict in a `Namespace` is enough to get `jjb.macros.<name>`
+    working the same as `jjb.globals`/`jjb.inc`.
+
     `source` has whole-line YAML comments blanked out first (see
     `_blank_out_comment_lines`) so a commented-out line's `{{ }}`/`{% %}`
     doesn't raise for code the author meant to disable.
@@ -199,10 +215,68 @@ def _render_jinja_on_loop(
                 "jjb": Namespace(
                     globals=Namespace(global_vars or {}),
                     inc=Namespace(inc_vars or {}),
+                    macros=Namespace(macro_vars or {}),
                 )
             },
             parse_result=False,
             strict=True,
+        )
+    except TemplateError as err:
+        raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
+
+
+def _compile_macro_module(
+    hass: HomeAssistant, source: str, global_vars: dict[str, Any] | None
+) -> Any:
+    """Compile a macro file, safe to call from any thread.
+
+    Injected into `macros.build_macro_namespace` as the `CompileMacroModule`
+    callback (avoids a circular import between this module and `macros.py`,
+    the same reason `render_and_parse` is injected into `includes.py`
+    instead of imported there). Same on-loop/off-loop thread dispatch as
+    `_render_jinja` — see its docstring for why.
+    """
+    if threading.get_ident() == hass.loop_thread_id:
+        return _compile_macro_module_on_loop(hass, source, global_vars)
+    return run_callback_threadsafe(
+        hass.loop, _compile_macro_module_on_loop, hass, source, global_vars
+    ).result()
+
+
+def _compile_macro_module_on_loop(
+    hass: HomeAssistant, source: str, global_vars: dict[str, Any] | None
+) -> Any:
+    """Compile a macro file and return its `jinja2.TemplateModule`.
+
+    Called once per declared `macros:` entry (see `macros.py`) rather than
+    per-render — the resulting module's macros are reused, unevaluated,
+    across the whole render tree until the next `jinjaboard/render` call.
+
+    Reaches into `Template._ensure_compiled` (underscore-private, same class
+    of risk as `frontend.py`'s `hass.data[LOVELACE_DATA]` reach-in) because
+    HA's `Template` class only exposes `async_render()` -> `str`, never the
+    underlying `jinja2.Template` a macro file needs to be compiled to. Once
+    compiled, `.make_module(vars)` is public `jinja2` API — confirmed
+    (throwaway repro, since removed) to return a `TemplateModule` whose
+    macros are callable attributes, bound to the same shared environment
+    globals (`states`, `now`, `area_id`, ...) as every other render, since
+    `_ensure_compiled` binds to `self._env` (the same per-`hass` cached
+    `TemplateEnvironment` `Template.async_render` itself uses).
+
+    Only `jjb.globals` is available inside a macro body, not `jjb.inc`: a
+    macro module is compiled once, upfront, before any `!include` tree walk
+    starts contributing `inc` vars, so there is no meaningful `inc` value to
+    give it — see `macros.py`'s module docstring.
+
+    Must run on the event loop for the same reason `_render_jinja_on_loop`
+    must: `_ensure_compiled`/`make_module` execute compiled Jinja bytecode,
+    which can call loop-bound HA globals like `now()`/`states()`.
+    """
+    template = Template(_blank_out_comment_lines(source), hass)
+    try:
+        compiled = template._ensure_compiled(strict=True)  # noqa: SLF001
+        return compiled.make_module(
+            {"jjb": Namespace(globals=Namespace(global_vars or {}), inc=Namespace({}))}
         )
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
@@ -214,6 +288,7 @@ def _render_and_parse(
     source: str,
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
+    macro_vars: dict[str, Any] | None,
     include_stack: list[Path],
 ) -> Any:
     """Render `source` (already read from `path`) and parse it as YAML.
@@ -226,12 +301,21 @@ def _render_and_parse(
     `global_vars` is the dashboard's own `globals:`, constant for the
     whole render tree. `inc_vars` accumulates `!include ... vars:` as the
     tree is walked — see `includes.py`'s `_render_included_file` for how
-    it's layered.
+    it's layered. `macro_vars` (the dashboard's own `macros:`, see
+    `macros.py`) is likewise constant for the whole tree, built once by
+    `render_template` before any include is walked.
     """
-    raw = _render_jinja(hass, source, global_vars, inc_vars)
+    raw = _render_jinja(hass, source, global_vars, inc_vars, macro_vars)
     try:
         return parse_with_includes(
-            hass, raw, path.parent, global_vars, inc_vars, include_stack, _render_and_parse
+            hass,
+            raw,
+            path.parent,
+            global_vars,
+            inc_vars,
+            macro_vars,
+            include_stack,
+            _render_and_parse,
         )
     except yaml.YAMLError as err:
         raise JinjaboardYamlError(raw) from err
@@ -242,6 +326,7 @@ def render_template(
     path: Path,
     source: str,
     global_vars: dict[str, Any] | None = None,
+    macro_paths: list[str] | None = None,
 ) -> Any:
     """Render `source` (the file at `path`) as YAML with embedded Jinja.
 
@@ -258,7 +343,11 @@ def render_template(
     (matching real Home Assistant's `!include`) and seeds the cycle-detection
     stack. `global_vars` becomes the render tree's `jjb.globals` — no
     `!include` has contributed `jjb.inc` vars yet, so that starts at `None`.
+    `macro_paths` (the dashboard's own `macros:`) is resolved once, up front,
+    into `jjb.macros` (see `macros.build_macro_namespace`) — unlike
+    `jjb.inc`, it never changes as the include tree is walked.
     """
+    macro_vars = build_macro_namespace(hass, macro_paths, global_vars, _compile_macro_module)
     return _render_and_parse(
-        hass, path, source, global_vars, None, include_stack=[path.resolve()]
+        hass, path, source, global_vars, None, macro_vars, include_stack=[path.resolve()]
     )

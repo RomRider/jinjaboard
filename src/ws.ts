@@ -11,11 +11,13 @@ export function renderTemplate(
   hass: HomeAssistant,
   template: string,
   globals?: Record<string, unknown>,
+  macros?: string[],
 ): Promise<unknown> {
   const request: RenderRequest = {
     type: "jinjaboard/render",
     template,
     globals,
+    macros,
   };
   return hass.callWS(request);
 }

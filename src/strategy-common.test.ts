@@ -62,6 +62,23 @@ describe("createStrategyGenerate", () => {
     });
   });
 
+  it("forwards macros to the WS call", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const generate = createStrategyGenerate(vi.fn());
+
+    await generate(
+      { template: "home.yaml.j2", macros: ["macros/common.yaml.j2"] },
+      mockHass(callWS),
+    );
+
+    expect(callWS).toHaveBeenCalledWith({
+      type: "jinjaboard/render",
+      template: "home.yaml.j2",
+      globals: undefined,
+      macros: ["macros/common.yaml.j2"],
+    });
+  });
+
   it("calls the error builder with the rejected error on WS failure", async () => {
     const error: JinjaboardWsError = { code: "template_error", message: "Line 3: boom" };
     const buildErrorResult = vi.fn().mockReturnValue({ cards: [] });

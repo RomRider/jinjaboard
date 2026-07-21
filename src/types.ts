@@ -2,6 +2,7 @@ export interface RenderRequest {
   type: "jinjaboard/render";
   template: string;
   globals?: Record<string, unknown>;
+  macros?: string[];
 }
 
 export type JinjaboardErrorCode =
@@ -36,4 +37,5 @@ export interface HomeAssistant {
 export interface StrategyConfig {
   template?: string;
   globals?: Record<string, unknown>;
+  macros?: string[];
 }
