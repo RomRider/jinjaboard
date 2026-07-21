@@ -15,6 +15,13 @@ examples — don't duplicate that here.
 
 ## Commands
 
+A `Makefile` at the repo root wraps the commands below (`make help` lists
+targets: `install`, `test`, `test-backend`, `test-frontend`, `typecheck`,
+`build`, `run`, `clean`, `ci`). It's the same thing `.devcontainer/
+install-deps.sh` and this section invoke — prefer it over retyping the raw
+commands, but the raw commands are documented below since the Makefile is
+just a thin wrapper and the rationale matters more than the invocation.
+
 Backend tests (pytest + `pytest-homeassistant-custom-component`), run against
 the devcontainer's own live HA venv rather than a separate one — `uv pip
 install -p <python>` installs into whatever interpreter you point it at

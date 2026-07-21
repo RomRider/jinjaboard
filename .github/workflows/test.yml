@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r requirements-test.txt
-      - run: pytest
+      - run: make test-backend PYTHON=python
 
   vitest:
     runs-on: ubuntu-latest
@@ -24,7 +24,4 @@ jobs:
           node-version: "22"
       - working-directory: src
         run: npm ci
-      - working-directory: src
-        run: npm run typecheck
-      - working-directory: src
-        run: npm run test
+      - run: make typecheck test-frontend
