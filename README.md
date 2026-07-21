@@ -274,7 +274,11 @@ npm run build        # bundles to custom_components/jinjaboard/www/jinjaboard-st
 ```
 
 The built bundle is `.gitignore`d and rebuilt as part of the release
-workflow — don't commit it.
+workflow — don't commit it. Because of that, `hacs.json` sets
+`"zip_release": true` / `"filename": "jinjaboard.zip"` so HACS installs from
+the release workflow's zip asset instead of a plain source-tree checkout of
+the tag — without `zip_release`, HACS downloads the repository's git content
+directly, which never contains this gitignored file.
 
 ### Tests
 
