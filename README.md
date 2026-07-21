@@ -100,8 +100,13 @@ strategy:
 - `template` is a path to your file, **relative to the Home Assistant config
   directory** (`/config`). It's validated on every render and can't escape
   that directory.
-- `variables` (optional) is passed into the template exactly like an
-  automation's `variables:` block.
+- `variables` (optional) are made available in the template under the `jjb`
+  namespace — `some_var` above is read as `{{ jjb.some_var }}`, not
+  `{{ some_var }}`. This is deliberate: HA's template environment already
+  defines a large set of its own globals (`states`, `now`, `area_id`, ...),
+  and a bare top-level variable name could silently shadow one of them
+  instead of erroring. Namespacing under `jjb` avoids that entirely, at the
+  cost of one extra `jjb.` prefix.
 
 Save, and the dashboard renders your template's output. Re-opening the
 dashboard (or reloading the page) re-renders it — JinjaBoard does not
@@ -162,6 +167,8 @@ A few things that differ from a plain HA config file, worth knowing:
   ```yaml
   - !include {path: cards/light.yaml.j2, vars: {area_id: kitchen}}
   ```
+  Same `jjb.` namespacing as the root template's `variables:` applies —
+  `cards/light.yaml.j2` reads this as `{{ jjb.area_id }}`.
 - **Directory includes are recursive** and match `*.yaml`, `*.yml`,
   `*.yaml.j2`, and `*.yml.j2` (dotfiles and dot-directories are skipped).
   Every matched file is rendered through Jinja regardless of which pattern

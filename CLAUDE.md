@@ -141,14 +141,26 @@ manually.
 Templates are plain YAML with embedded Jinja (`{{ }}` / `{% %}`) — **not** a
 template whose body constructs a JSON structure via `| to_json`. The
 pipeline is: render the raw file text through
-`Template(source, hass).async_render(variables, parse_result=False, strict=True)`
+`Template(source, hass).async_render({"jjb": Namespace(variables or {})}, parse_result=False, strict=True)`
 to get a plain string, then parse *that string* as YAML through
 `includes.py`'s private loader (`includes.parse_with_includes` — **not**
 `homeassistant.util.yaml.loader.parse_yaml`; see "Includes" below for why).
 `strict=True` turns HA's default undefined-variable behavior (log a warning,
 render as empty) into a raised `TemplateError`, so a typo'd variable name
 surfaces as a `template_error` instead of a silently broken dashboard.
-Two more deliberate departures from the obvious approach, both load-bearing:
+Three more deliberate departures from the obvious approach, all load-bearing:
+
+- Dashboard-declared `variables` are only reachable as `jjb.<name>`, never as
+  a bare top-level name — passing `variables` straight through as the render
+  context would let one silently shadow one of HA's own template globals
+  (`states`, `now`, `area_id`, ...). `jinja2.utils.Namespace` (not a plain
+  `dict`) is used for the `jjb` object specifically so a variable named e.g.
+  `items` can't be shadowed by `dict.items` itself — attribute access on a
+  `Namespace` always resolves to the stored value, and still raises correctly
+  under `strict=True` for a genuinely-undefined one (confirmed: Jinja's
+  attribute-getter converts the resulting `AttributeError` into its own
+  `Undefined`/`UndefinedError`, the same as any other undefined access, so
+  `| default(...)`/`is defined` guards work identically through `jjb`).
 
 - `parse_result=False` is required. `Template.async_render`'s own default
   result-parsing uses `ast.literal_eval`, not `json.loads`/YAML — it doesn't

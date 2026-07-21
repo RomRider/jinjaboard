@@ -5,3 +5,7 @@ views:
       - type: markdown
         content: "Hello from {{ 'Jinja' + 'Board' }}!"
       {% endfor %}
+      {% for room in jjb.rooms %}
+      - type: markdown
+        content: "Room: {{ room.name }}, Temperature: {{ room.temperature }}°C"
+      {% endfor %}

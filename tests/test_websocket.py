@@ -21,7 +21,7 @@ async def test_render_success(
 async def test_render_passes_variables(
     hass: HomeAssistant, config_entry, hass_ws_client, write_template
 ) -> None:
-    write_template("greet.yaml.j2", "value: {{ name }}\n")
+    write_template("greet.yaml.j2", "value: {{ jjb.name }}\n")
     client = await hass_ws_client(hass)
     await client.send_json_auto_id(
         {

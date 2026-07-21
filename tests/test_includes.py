@@ -30,7 +30,7 @@ def test_include_scalar_form(hass: HomeAssistant, write_template) -> None:
 def test_include_mapping_form_with_vars_override(
     hass: HomeAssistant, write_template
 ) -> None:
-    write_template("greeting.yaml.j2", "content: Hello {{ area_id }}\n")
+    write_template("greeting.yaml.j2", "content: Hello {{ jjb.area_id }}\n")
     root = write_template(
         "root.yaml.j2",
         "cards:\n  - !include {path: greeting.yaml.j2, vars: {area_id: kitchen}}\n",
@@ -42,7 +42,7 @@ def test_include_mapping_form_with_vars_override(
 def test_include_inherits_parent_variables_without_override(
     hass: HomeAssistant, write_template
 ) -> None:
-    write_template("greeting.yaml.j2", "content: Hello {{ area_id }}\n")
+    write_template("greeting.yaml.j2", "content: Hello {{ jjb.area_id }}\n")
     root = write_template("root.yaml.j2", "cards:\n  - !include greeting.yaml.j2\n")
     result = render_template(
         hass, root, root.read_text(), variables={"area_id": "living_room"}

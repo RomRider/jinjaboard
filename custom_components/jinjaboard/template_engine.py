@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from jinja2.utils import Namespace
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
@@ -70,10 +71,23 @@ def _render_jinja(
     access — caught below and turned into the same `template_error` path
     as a syntax error, so it reaches the dashboard's error card instead of
     only the HA log.
+
+    Dashboard-declared `variables` are exposed as `jjb.<name>`, not as bare
+    top-level names — HA's template environment already defines a large set
+    of its own globals (`states`, `now`, `area_id`, ...), and a `variables:`
+    entry that happened to reuse one of those names would silently shadow it
+    instead of erroring. `jinja2.utils.Namespace` (the same object `{% set ns
+    = namespace() %}` produces) is used rather than a plain dict so that a
+    variable named e.g. `items` or `get` can't be shadowed by dict's own
+    built-in methods of the same name — attribute access on a Namespace
+    always resolves to the stored value, and correctly raises under
+    `strict=True` for a genuinely undefined/misspelled one.
     """
     template = Template(source, hass)
     try:
-        return template.async_render(variables, parse_result=False, strict=True)
+        return template.async_render(
+            {"jjb": Namespace(variables or {})}, parse_result=False, strict=True
+        )
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
 
