@@ -20,7 +20,12 @@ help:
 install: install-backend install-frontend
 
 install-backend:
-	uv pip install -r requirements-test.txt -p $(PYTHON)
+	# --system: PYTHON may point at a bare interpreter that isn't itself a
+	# venv (e.g. CI's actions/setup-python one) — uv otherwise refuses to
+	# install into it. Harmless when PYTHON is a real venv (e.g. the
+	# devcontainer's ha-venv): the explicit -p path is still what's targeted,
+	# --system only relaxes the "is this a venv" safety check.
+	uv pip install --system -r requirements-test.txt -p $(PYTHON)
 	# home-assistant-frontend isn't a pip dependency of the `homeassistant`
 	# package itself (HA's own requirements-installer resolves it lazily at
 	# runtime from the `frontend` component's manifest.json) but our tests
@@ -28,7 +33,7 @@ install-backend:
 	# wants for whichever `homeassistant` version just got installed above,
 	# rather than hand-pinning a second version number that can silently
 	# drift out of sync with the first (as happened once already).
-	uv pip install "$$($(PYTHON) -c 'import json, pathlib, homeassistant.components.frontend as f; print(json.loads(pathlib.Path(f.__file__).with_name("manifest.json").read_text())["requirements"][0])')" -p $(PYTHON)
+	uv pip install --system "$$($(PYTHON) -c 'import json, pathlib, homeassistant.components.frontend as f; print(json.loads(pathlib.Path(f.__file__).with_name("manifest.json").read_text())["requirements"][0])')" -p $(PYTHON)
 
 install-frontend:
 	cd src && npm install
