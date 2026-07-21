@@ -15,14 +15,39 @@ examples — don't duplicate that here.
 
 ## Commands
 
+Backend tests (pytest + `pytest-homeassistant-custom-component`, isolated
+from the devcontainer's live HA venv):
+```bash
+uv venv .venv-test && uv pip install -r requirements-test.txt -p .venv-test
+.venv-test/bin/python -m pytest
+```
+`pyproject.toml` pins `pythonpath = ["."]` — `custom_components/jinjaboard`
+is imported as a plain `import custom_components` by HA's loader (see
+`homeassistant/loader.py`'s `_get_custom_components`), resolved via
+`sys.path`, not `hass.config.config_dir` — this is unrelated to which
+directory `hass_config_dir` points at. `tests/conftest.py` overrides
+`hass_config_dir` to a fresh `tmp_path` per test (via the `hass_tmp_config_dir`
+fixture) rather than the shared package directory, since tests write their
+own template fixtures into it via the `write_template` fixture.
+`requirements-test.txt` pins exact versions matching what's installed in
+`/home/vscode/.local/ha-venv` (confirmed via PyPI metadata, not assumed) —
+`pytest-homeassistant-custom-component` pins its own `homeassistant` version,
+and `home-assistant-frontend` is needed separately because the `frontend`
+component (a manifest dependency) fails to set up without it.
+
 Frontend (`src/`):
 ```bash
 cd src
 npm install
 npm run typecheck   # tsc --noEmit
+npm run test         # vitest run
 npm run build        # bundles to ../custom_components/jinjaboard/www/jinjaboard-strategy.js
 ```
-There is no backend test suite yet. No lint config exists for either side yet.
+Vitest runs in `happy-dom` (see `vitest.config.mts`) since `strategy-
+dashboard.ts` calls `customElements.define` and extends `HTMLElement` at
+import time. Both suites run in CI on every push/PR via
+`.github/workflows/test.yml` — separate from `validate.yml`'s
+hassfest/HACS jobs, which stay on their existing weekly schedule.
 
 ### Running a real Home Assistant instance to test against
 
@@ -40,6 +65,21 @@ any Python file, HA must be restarted to pick up the change (no hot reload).
 After editing `src/*.ts`, run `npm run build` and then either restart HA or
 just reload the browser page — the built JS is served from disk on every
 request, no restart needed for frontend-only changes.
+
+Two dashboards are pre-configured via `configuration.yaml`'s `lovelace:
+dashboards:` block (YAML mode, `.devcontainer/test/dashboards/*.yaml`) —
+`/jinjaboard-test` and `/jinjaboard-includes-test` — so manual verification
+needs zero setup; no more hand-creating a dashboard through the UI or
+scripting `lovelace/config/save` WS calls. **Caveat**: `configuration.yaml`
+itself is mounted as a single-*file* bind
+(`devcontainer.json`'s `mounts`), which is fragile — an atomic-write
+save (rename-over-target, which many editors including this one's own file
+tools default to) can silently disconnect it from the host file, after which
+further edits stop propagating into the container until it's re-synced
+(`cp .devcontainer/test/configuration.yaml /config/configuration.yaml`) or
+the container is recreated. The dashboard *content* files under
+`.devcontainer/test/dashboards/` don't have this problem — they're covered
+by the existing directory-level bind of `.devcontainer/test` → `/config/test`.
 
 Login for the devcontainer's test user: `test` / `test` (see
 `.devcontainer/test/.env`).

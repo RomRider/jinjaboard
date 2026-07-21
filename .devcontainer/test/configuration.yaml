@@ -8,3 +8,18 @@ debugpy:
 
 logger:
   default: warning
+
+lovelace:
+  dashboards:
+    jinjaboard-test:
+      mode: yaml
+      filename: test/dashboards/jinjaboard-test.yaml
+      title: JinjaBoard Test
+      icon: mdi:test-tube
+      show_in_sidebar: true
+    jinjaboard-includes-test:
+      mode: yaml
+      filename: test/dashboards/jinjaboard-includes-test.yaml
+      title: JinjaBoard Includes Test
+      icon: mdi:file-tree
+      show_in_sidebar: true

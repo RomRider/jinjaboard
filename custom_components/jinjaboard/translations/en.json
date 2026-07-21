@@ -5,9 +5,6 @@
                 "title": "Set up JinjaBoard",
                 "description": "JinjaBoard renders Jinja2-templated Lovelace dashboards from files on disk. After setup, create a dashboard and set its YAML content to a `strategy` block pointing at your template file — see the README for an example. The frontend resource is registered automatically; no manual Resources step needed."
             }
-        },
-        "abort": {
-            "already_configured": "JinjaBoard is already set up."
         }
     }
 }

@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# `custom_components/jinjaboard` is imported by HA's loader as a plain
+# `import custom_components` (see homeassistant/loader.py's
+# `_get_custom_components`) — resolved via sys.path, not hass.config.
+# config_dir. Explicit `pythonpath` guarantees it resolves regardless of how
+# pytest is invoked (bare `pytest` vs `python -m pytest`, rootdir-insertion
+# quirks, etc.) — the repo root must be importable for `custom_components`
+# to be found.
+pythonpath = ["."]

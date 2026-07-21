@@ -1,3 +1,5 @@
 **/__pycache__
 **/node_modules
 custom_components/jinjaboard/www/
+.venv-test/
+.pytest_cache/

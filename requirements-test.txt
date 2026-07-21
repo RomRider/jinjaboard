@@ -1,0 +1,5 @@
+pytest-homeassistant-custom-component==0.13.346
+# Required by HA core's `frontend` component (a manifest dependency of
+# jinjaboard) — pinned to match homeassistant/components/frontend/manifest.json's
+# own "requirements" pin exactly.
+home-assistant-frontend==20260624.5

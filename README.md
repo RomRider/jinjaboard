@@ -209,6 +209,20 @@ npm run build        # bundles to custom_components/jinjaboard/www/jinjaboard-st
 The built bundle is `.gitignore`d and rebuilt as part of the release
 workflow — don't commit it.
 
+### Tests
+
+Backend (`pytest` + `pytest-homeassistant-custom-component`, in its own venv
+so it doesn't touch the devcontainer's live HA install):
+```bash
+uv venv .venv-test && uv pip install -r requirements-test.txt -p .venv-test
+.venv-test/bin/python -m pytest
+```
+Frontend (`vitest`):
+```bash
+cd src && npm install && npm run test
+```
+Both run in CI on every push and pull request.
+
 ## Why not `add_extra_js_url`?
 
 If you're reading the source: the frontend bundle is registered as a
