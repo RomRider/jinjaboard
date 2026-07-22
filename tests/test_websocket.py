@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from homeassistant.core import HomeAssistant
+
+from custom_components.jinjaboard.const import CONF_ALLOWED_TEMPLATES, DOMAIN
 
 
 async def test_render_success(
@@ -172,3 +176,79 @@ async def test_render_yaml_parse_error_includes_raw_preview(
     assert response["success"] is False
     assert response["error"]["code"] == "yaml_parse_error"
     assert "title: Broken" in response["error"]["message"]
+
+
+async def _setup_narrow_entry(hass: HomeAssistant, entries: list[dict]) -> MockConfigEntry:
+    """A JinjaBoard config entry with a specific allowlist, not the permissive
+    `config_entry` fixture — used by the tests below that exercise the
+    allowlist itself."""
+    entry = MockConfigEntry(domain=DOMAIN, options={CONF_ALLOWED_TEMPLATES: entries})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_render_rejects_template_not_on_allowlist(
+    hass: HomeAssistant, hass_ws_client, write_template
+) -> None:
+    write_template("home.yaml.j2", "ok: true\n")
+    await _setup_narrow_entry(hass, [])
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "home.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "template_not_authorized"
+
+
+async def test_render_succeeds_for_exact_allowlisted_file(
+    hass: HomeAssistant, hass_ws_client, write_template
+) -> None:
+    write_template("home.yaml.j2", "ok: true\n")
+    await _setup_narrow_entry(hass, [{"path": "home.yaml.j2", "is_dir": False}])
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "home.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"ok": True}
+
+
+async def test_render_succeeds_for_file_under_allowlisted_directory(
+    hass: HomeAssistant, hass_ws_client, write_template
+) -> None:
+    write_template("dashboards/kitchen.yaml.j2", "ok: true\n")
+    await _setup_narrow_entry(hass, [{"path": "dashboards", "is_dir": True}])
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "dashboards/kitchen.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"ok": True}
+
+
+async def test_render_include_not_checked_against_allowlist(
+    hass: HomeAssistant, hass_ws_client, write_template
+) -> None:
+    """Only the top-level `template` is checked; an `!include`d file that
+    isn't itself on the allowlist is still reachable from an authorized
+    template — matches the documented "!include etc. are not filtered"
+    design, distinct from the path_traversal guard which still applies."""
+    write_template("included.yaml.j2", "title: included\n")
+    write_template("root.yaml.j2", "views:\n  - !include included.yaml.j2\n")
+    await _setup_narrow_entry(hass, [{"path": "root.yaml.j2", "is_dir": False}])
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"views": [{"title": "included"}]}

@@ -8,6 +8,7 @@ export interface RenderRequest {
 export type JinjaboardErrorCode =
   | "path_missing"
   | "path_traversal"
+  | "template_not_authorized"
   | "include_not_found"
   | "template_error"
   | "yaml_parse_error"
