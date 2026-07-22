@@ -128,3 +128,27 @@ def test_macro_path_traversal(hass: HomeAssistant, write_template) -> None:
     root = write_template("root.yaml.j2", "ok: true\n")
     with pytest.raises(JinjaboardPathError):
         _render(hass, root, macro_paths=["../../../../../../etc"])
+
+
+def test_macro_syntax_error_names_the_file(hass: HomeAssistant, write_template) -> None:
+    """With several `macros:` files declared, an error in one of them used
+    to only say "Line N: ...", with nothing pointing at which declared file
+    it came from. A stray top-level expression (outside any `{% macro %}`
+    block) is executed at compile time, unlike a reference inside a macro
+    *body*, which only runs once the macro is actually called."""
+    write_template("macros/good.yaml.j2", "{% macro a() %}a{% endmacro %}\n")
+    write_template(
+        "macros/bad.yaml.j2",
+        "{% macro b() %}b{% endmacro %}\n{{ totally_undefined }}\n",
+    )
+    root = write_template("root.yaml.j2", "ok: true\n")
+    with pytest.raises(JinjaboardTemplateError) as excinfo:
+        _render(hass, root, macro_paths=["macros/good.yaml.j2", "macros/bad.yaml.j2"])
+    assert "bad.yaml.j2" in str(excinfo.value)
+    # The undefined reference is on the macro file's own line 2 — this must
+    # stay 2, not some much larger number from Jinja's *generated Python*
+    # for the compiled template (imports, the `root()` wrapper, macro defs,
+    # ...), which `make_module` exposes in its raw traceback unless that
+    # traceback is explicitly re-mapped back to template-source line numbers
+    # first (see `_compile_macro_module_on_loop`'s docstring).
+    assert excinfo.value.line == 2

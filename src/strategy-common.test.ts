@@ -15,6 +15,39 @@ describe("errorCard", () => {
     expect(card.content).toContain("template_error");
     expect(card.content).toContain("Line 3: boom");
   });
+
+  it("wraps the whole card in {% raw %} so embedded {{ }}/{% %} isn't re-evaluated as a live template", () => {
+    // The markdown card auto-detects `{{`/`{%` anywhere in `content` and
+    // sends the whole string through core's `render_template` for live
+    // evaluation (confirmed live: without this escape, a message quoting
+    // the user's own broken Jinja syntax rendered the whole card blank).
+    const card = errorCard({
+      code: "template_error",
+      message: "Line 3: \"{{ totally_undefined }}\" is undefined",
+    });
+
+    expect(card.content.startsWith("{% raw %}")).toBe(true);
+    expect(card.content.trimEnd().endsWith("{% endraw %}")).toBe(true);
+    expect(card.content).toContain("{{ totally_undefined }}");
+  });
+
+  it("soft-wraps a long single-line message instead of letting it overflow", () => {
+    const longMessage =
+      "in included file 'nested/middle.yaml.j2' (included at line 2): " +
+      "in included file 'leaf.yaml.j2' (included at line 2): " +
+      "Line 1: UndefinedError: 'totally_undefined' is undefined";
+    const card = errorCard({ code: "template_error", message: longMessage });
+
+    const codeBlockLines = card.content
+      .split("```")[1]
+      .trim()
+      .split("\n");
+    expect(codeBlockLines.length).toBeGreaterThan(1);
+    for (const line of codeBlockLines) {
+      expect(line.length).toBeLessThanOrEqual(60);
+    }
+    expect(codeBlockLines.join(" ")).toBe(longMessage);
+  });
 });
 
 describe("createStrategyGenerate", () => {

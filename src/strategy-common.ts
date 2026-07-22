@@ -1,10 +1,124 @@
 import { renderTemplate } from "./ws";
-import type { HomeAssistant, JinjaboardWsError, StrategyConfig } from "./types";
+import type { HomeAssistant, JinjaboardErrorCode, JinjaboardWsError, StrategyConfig } from "./types";
+
+interface ErrorPresentation {
+  icon: string;
+  title: string;
+  /** Only set for codes whose backend message doesn't already spell out the fix. */
+  hint?: string;
+}
+
+const ERROR_PRESENTATIONS: Record<JinjaboardErrorCode, ErrorPresentation> = {
+  path_missing: {
+    icon: "🗂️",
+    title: "Template File Not Found",
+    hint: "Check the `template:` path in your dashboard/view/section config — it's relative to the Home Assistant config directory.",
+  },
+  path_traversal: {
+    icon: "🚫",
+    title: "Path Outside Config Directory",
+    hint: "Every template and `!include` path must resolve inside the Home Assistant config directory — look for a stray `../` or an incorrect base path.",
+  },
+  template_not_authorized: {
+    icon: "🔒",
+    title: "Template Not Authorized",
+  },
+  include_not_found: {
+    icon: "🔗",
+    title: "Include Not Found",
+    hint: "One of this template's `!include`/`!include_dir_*` targets (or a `macros:` entry) couldn't be found on disk.",
+  },
+  template_error: {
+    icon: "🧩",
+    title: "Template Error",
+    hint: "Dashboard `globals:` are only reachable as `jjb.globals.<name>`, and `!include ... vars:` as `jjb.inc.<name>` — a bare variable name is never populated.",
+  },
+  yaml_parse_error: {
+    icon: "📄",
+    title: "Invalid YAML Output",
+  },
+  render_timeout: {
+    icon: "⏱️",
+    title: "Render Timed Out",
+    hint: "The template took too long to render — check for expensive loops over `states()`/`areas()`/`devices()`.",
+  },
+};
+
+const DEFAULT_PRESENTATION: ErrorPresentation = { icon: "⚠️", title: "JinjaBoard Render Error" };
+
+// The card's fenced code block renders with `white-space: pre` (needed to
+// keep the message monospaced) and only `overflow-x: auto` for anything
+// past the card's width — confirmed live: that scrollbar is easy to miss
+// entirely, especially for the long, single-line messages an include-chain
+// error produces (`in included file 'x' (included at line N): in included
+// file 'y' ...`), silently hiding most of the message instead of wrapping
+// it. Soft-wrapping onto multiple lines ourselves, at word boundaries,
+// keeps the whole message visible without needing card-level CSS control
+// (a markdown card's `content` is plain text; there's no `card_mod`-style
+// styling hook available here).
+// A default single-column masonry card is ~458px wide in practice (measured
+// live) — at the markdown card's 12px monospace code font that's ~63
+// characters before the browser's own horizontal scrollbar would kick in.
+// 60 leaves a small margin rather than wrapping right at the edge.
+const CODE_BLOCK_WRAP_WIDTH = 60;
+
+function wrapForCodeBlock(text: string, width = CODE_BLOCK_WRAP_WIDTH): string {
+  return text
+    .split("\n")
+    .map((line) => wrapLine(line, width))
+    .join("\n");
+}
+
+function wrapLine(line: string, width: number): string {
+  if (line.length <= width) {
+    return line;
+  }
+  const words = line.split(" ");
+  const wrapped: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (current && current.length + 1 + word.length > width) {
+      wrapped.push(current);
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  if (current) {
+    wrapped.push(current);
+  }
+  return wrapped.join("\n");
+}
 
 export function errorCard(error: JinjaboardWsError) {
+  const presentation = (error.code && ERROR_PRESENTATIONS[error.code]) || DEFAULT_PRESENTATION;
+  const message = error.message ?? String(error);
+
+  const sections = [
+    `## ${presentation.icon} ${presentation.title}`,
+    "```\n" + wrapForCodeBlock(message) + "\n```",
+  ];
+  if (presentation.hint) {
+    sections.push(`💡 ${presentation.hint}`);
+  }
+  sections.push(`---\nError code: \`${error.code ?? "unknown"}\``);
+
   return {
     type: "markdown",
-    content: `## JinjaBoard render error\n\n**${error.code ?? "error"}**\n\n${error.message ?? String(error)}`,
+    // HA's markdown card auto-detects `{{`/`{%` anywhere in `content` and
+    // sends the whole string through core's own `render_template` WS
+    // command for live evaluation (`hasTemplate()` in home-assistant-
+    // frontend's markdown card). Both the backend's own message (which
+    // routinely quotes back a snippet of the user's broken Jinja source)
+    // and this file's own static hint text (e.g. the literal `{% for %}`
+    // in the yaml_parse_error hint) are near-guaranteed to contain that
+    // syntax — without escaping, the card would try to render our error
+    // text as a template against a context where none of it is defined,
+    // producing a blank card instead of the error. `{% raw %}...{% endraw
+    // %}` is Jinja's own literal-text escape, so core's renderer still
+    // gets dispatched to (satisfying `hasTemplate()`) but passes the whole
+    // thing through unevaluated.
+    content: `{% raw %}\n${sections.join("\n\n")}\n{% endraw %}`,
   };
 }
 

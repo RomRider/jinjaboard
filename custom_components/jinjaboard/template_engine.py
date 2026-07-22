@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import jinja2.exceptions
 import yaml
 from jinja2.utils import Namespace
 
@@ -28,14 +29,9 @@ __all__ = [
 ]
 
 
-def _extract_lineno(err: TemplateError) -> int | None:
-    """Recover the template source line number from a wrapped Jinja error.
+def _lineno_from_jinja_error(original: BaseException) -> int | None:
+    """Recover the template source line number from a raw Jinja exception.
 
-    `homeassistant.exceptions.TemplateError.__init__` only keeps a string
-    message — it discards the original Jinja/Python exception except as
-    `__cause__` (`raise TemplateError(err) from err` in
-    `Template.async_render`). That original exception is still where the
-    line number lives:
     - `jinja2.exceptions.TemplateSyntaxError` (bad `{% %}`/`{{ }}` syntax)
       carries `.lineno` directly, set by the parser.
     - Runtime errors (e.g. `UndefinedError`) don't have `.lineno`, but
@@ -48,9 +44,6 @@ def _extract_lineno(err: TemplateError) -> int | None:
       `env.compile()`. Walking the traceback for that filename recovers
       the line.
     """
-    original = err.__cause__
-    if original is None:
-        return None
     if (lineno := getattr(original, "lineno", None)) is not None:
         return lineno
     line: int | None = None
@@ -60,6 +53,21 @@ def _extract_lineno(err: TemplateError) -> int | None:
             line = tb.tb_lineno
         tb = tb.tb_next
     return line
+
+
+def _extract_lineno(err: TemplateError) -> int | None:
+    """Recover the template source line number from a wrapped Jinja error.
+
+    `homeassistant.exceptions.TemplateError.__init__` only keeps a string
+    message — it discards the original Jinja/Python exception except as
+    `__cause__` (`raise TemplateError(err) from err` in
+    `Template.async_render`). That original exception is still where the
+    line number lives — see `_lineno_from_jinja_error` for how it's dug out.
+    """
+    original = err.__cause__
+    if original is None:
+        return None
+    return _lineno_from_jinja_error(original)
 
 
 # Matches a line that *starts* a YAML block scalar: `key: |`, `- >`,
@@ -271,6 +279,33 @@ def _compile_macro_module_on_loop(
     Must run on the event loop for the same reason `_render_jinja_on_loop`
     must: `_ensure_compiled`/`make_module` execute compiled Jinja bytecode,
     which can call loop-bound HA globals like `now()`/`states()`.
+
+    Two separate except clauses below, not one: `_ensure_compiled` (via
+    `Template.ensure_valid`) catches raw `jinja2.TemplateError` itself and
+    re-raises it as HA's own `homeassistant.exceptions.TemplateError` — but
+    only for *syntax* errors caught at compile time. `make_module` executes
+    the module's top-level code directly against raw jinja2 (there is no
+    HA-level equivalent of `Template.async_render`'s own wrapping for this
+    call), so a *runtime* error there — e.g. a stray top-level `{{ some_name
+    }}` outside any `{% macro %}` block, which macro-body references
+    themselves never trigger since a macro's body only runs when called —
+    surfaces as a raw jinja2 exception instead. Without the second clause
+    that raw exception would propagate all the way out of the executor job
+    unhandled, instead of becoming a clean `template_error`.
+
+    That second clause also has to explicitly re-run the exception through
+    `Environment.handle_exception()` (confirmed live via a pure-jinja2
+    repro, no HA involved) before `_lineno_from_jinja_error` can trust the
+    traceback: the `<template>` frame `_lineno_from_jinja_error` looks for
+    is only mapped back to the *template source* line by Jinja's own
+    `debug.rewrite_traceback_stack`, which normally runs as part of
+    `Template.render`/`generate`'s own exception handling — `make_module`
+    bypasses that entirely, so its raw traceback's `<template>` frame is
+    actually a line number into Jinja's *generated Python* for the compiled
+    template (imports, the `root()` function wrapper, macro defs, ...),
+    which has no 1:1 relationship to the original source. Without this,
+    the reported line number is silently wrong rather than merely absent —
+    worse than not showing one at all.
     """
     template = Template(_blank_out_comment_lines(source), hass)
     try:
@@ -280,6 +315,13 @@ def _compile_macro_module_on_loop(
         )
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
+    except jinja2.exceptions.TemplateError:
+        try:
+            template._env.handle_exception()  # noqa: SLF001
+        except jinja2.exceptions.TemplateError as rewritten:
+            raise JinjaboardTemplateError(
+                str(rewritten), line=_lineno_from_jinja_error(rewritten)
+            ) from rewritten
 
 
 def _render_and_parse(

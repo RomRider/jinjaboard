@@ -29,3 +29,9 @@ lovelace:
       title: JinjaBoard View/Section Test
       icon: mdi:view-grid-plus
       show_in_sidebar: true
+    jinjaboard-errors-test:
+      mode: yaml
+      filename: test/dashboards/jinjaboard-errors-test.yaml
+      title: JinjaBoard Errors Test
+      icon: mdi:alert-decagram
+      show_in_sidebar: true
