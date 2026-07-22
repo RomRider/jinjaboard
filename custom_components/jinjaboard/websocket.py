@@ -96,18 +96,32 @@ async def handle_render(
         connection.send_error(msg["id"], "include_not_found", str(err))
         return
     except JinjaboardTemplateError as err:
-        message = str(err)
-        if err.line is not None:
-            message = f"Line {err.line}: {message}"
-        connection.send_error(msg["id"], "template_error", message)
+        # `str(err)` already carries its own "Line N:" (see
+        # JinjaboardTemplateError.__init__) and, for a nested `!include`
+        # failure, the "in included file X (included at line N): " chain
+        # `includes.py` built around it — no further formatting needed here.
+        connection.send_error(msg["id"], "template_error", str(err))
         return
     except JinjaboardYamlError as err:
+        # `str(err)` is either the generic default message, or (for a nested
+        # `!include` failure) that default prefixed with the same
+        # "in included file X (included at line N): " chain used for
+        # `template_error` above — without it, a YAML error inside an
+        # included file would show the same generic sentence as one in the
+        # root template, with no indication of which file actually failed.
+        # The preview is appended as its own paragraph, starting on a fresh
+        # line, and *not* through `!r` (which would escape its real
+        # newlines to literal `\n` text, collapsing what's usually
+        # multi-line rendered YAML into one unreadable line) — the raw
+        # rendered output's own line breaks carry real information about
+        # where the indentation went wrong, so they need to survive
+        # into what the frontend renders as a fenced code block.
         preview = err.raw_output[:_RAW_OUTPUT_PREVIEW_CHARS]
         connection.send_error(
             msg["id"],
             "yaml_parse_error",
-            "Rendered output was not valid YAML. Check indentation around any "
-            f"{{% for %}}/{{% if %}} blocks. Raw output (truncated): {preview!r}",
+            f"{err}. Check indentation around any {{% for %}}/{{% if %}} "
+            f"blocks. Raw output (truncated):\n{preview}",
         )
         return
 

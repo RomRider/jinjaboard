@@ -175,7 +175,17 @@ async def test_render_yaml_parse_error_includes_raw_preview(
     response = await client.receive_json()
     assert response["success"] is False
     assert response["error"]["code"] == "yaml_parse_error"
-    assert "title: Broken" in response["error"]["message"]
+    message = response["error"]["message"]
+    assert "title: Broken" in message
+    # The raw preview starts on its own line, after the explanatory
+    # sentence, and keeps the rendered output's *real* line breaks rather
+    # than a `repr()`-escaped `\\n` — otherwise a normally multi-line
+    # rendered YAML preview collapses into one unreadable line.
+    assert message.endswith(
+        "Raw output (truncated):\n"
+        "views:\n  - title: Broken\n    cards:\n    - type: markdown\n        content: bad"
+    )
+    assert "\\n" not in message
 
 
 async def _setup_narrow_entry(hass: HomeAssistant, entries: list[dict]) -> MockConfigEntry:

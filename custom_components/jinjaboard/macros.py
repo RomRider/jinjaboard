@@ -61,7 +61,15 @@ def _compile_one(
         raise JinjaboardIncludeNotFoundError(
             f"Macro file {relative_to!r} not found"
         ) from err
-    return compile_macro_module(hass, source, global_vars)
+    try:
+        return compile_macro_module(hass, source, global_vars)
+    except JinjaboardTemplateError as err:
+        # Same "name the file" wrapping `includes.py`'s `_render_included_file`
+        # does for `!include` — without it, a syntax/undefined-variable error
+        # in one of several declared `macros:` files would only ever say
+        # "Line N: ...", with nothing pointing at which file it came from.
+        err.args = (f"in macro file {relative_to!r}: {err}",) + err.args[1:]
+        raise
 
 
 def build_macro_namespace(

@@ -1,0 +1,58 @@
+views:
+  - title: Path Missing
+    icon: mdi:file-hidden
+    strategy:
+      type: custom:jinjaboard
+      template: test/jinjaboard/errors/does_not_exist.yaml.j2
+
+  - title: Path Traversal
+    icon: mdi:folder-alert
+    strategy:
+      type: custom:jinjaboard
+      template: ../../../../../../etc/hostname
+
+  - title: Not Authorized
+    icon: mdi:lock-alert
+    strategy:
+      type: custom:jinjaboard
+      # Deliberately a real, valid, *existing* template — just not under the
+      # test/jinjaboard/errors/ prefix this dashboard's allowlist entry
+      # authorizes, so this demonstrates the authorization gate specifically,
+      # not a path/content problem.
+      template: test/jinjaboard/hello.yaml.j2
+
+  - title: Include Not Found
+    icon: mdi:file-question
+    strategy:
+      type: custom:jinjaboard
+      template: test/jinjaboard/errors/include_not_found.yaml.j2
+
+  - title: Template Error
+    icon: mdi:code-braces
+    strategy:
+      type: custom:jinjaboard
+      template: test/jinjaboard/errors/template_error.yaml.j2
+
+  - title: YAML Parse Error
+    icon: mdi:file-alert
+    strategy:
+      type: custom:jinjaboard
+      template: test/jinjaboard/errors/yaml_parse_error.yaml.j2
+
+  - title: Nested Include Error
+    icon: mdi:file-tree
+    strategy:
+      type: custom:jinjaboard
+      # root -> nested/middle.yaml.j2 -> nested/leaf.yaml.j2, undefined
+      # variable in leaf.yaml.j2 — exercises the include-chain message
+      # ordering fix (each file's own line number now stays anchored next
+      # to that file's own segment of the message).
+      template: test/jinjaboard/errors/nested_include_error.yaml.j2
+
+  - title: Macro File Error
+    icon: mdi:function-variant
+    strategy:
+      type: custom:jinjaboard
+      template: test/jinjaboard/errors/macro_error.yaml.j2
+      macros:
+        - test/jinjaboard/errors/macros/bad.yaml.j2

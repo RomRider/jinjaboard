@@ -200,6 +200,45 @@ def test_nested_include_error_names_file_and_line(
     message = str(excinfo.value)
     assert "child.yaml.j2" in message
     assert "included at line 3" in message
+    # The undefined variable is on child.yaml.j2's own line 1 — that "Line 1"
+    # must appear *after* the "included at line 3" chain segment, right next
+    # to the message it actually belongs to, not glued onto the front of the
+    # whole string where it would misleadingly read as describing root.yaml.j2.
+    assert message.index("included at line 3") < message.index("Line 1")
+
+
+def test_two_level_nested_include_error_orders_chain_outer_to_inner(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A three-file chain (root -> middle -> leaf) must read as a legible,
+    correctly-ordered breadcrumb: each file's own line number stays anchored
+    next to that file's own segment of the message."""
+    write_template("leaf.yaml.j2", "content: \"{{ totally_undefined }}\"\n")
+    write_template("middle.yaml.j2", "value: !include leaf.yaml.j2\n")
+    root = write_template(
+        "root.yaml.j2", "cards:\n  - !include middle.yaml.j2\n"
+    )
+    with pytest.raises(JinjaboardTemplateError) as excinfo:
+        _render(hass, root)
+    message = str(excinfo.value)
+    assert message.index("middle.yaml.j2") < message.index("leaf.yaml.j2")
+    assert message.index("leaf.yaml.j2") < message.index("Line 1")
+
+
+def test_yaml_error_inside_included_file_names_the_file(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A YAML parse error originating in an `!include`d file used to report
+    only the generic top-level message, with no indication of which file in
+    the include tree actually failed."""
+    write_template(
+        "child.yaml.j2",
+        "views:\n  - title: Broken\n    cards:\n    - type: markdown\n        content: bad\n",
+    )
+    root = write_template("root.yaml.j2", "result: !include child.yaml.j2\n")
+    with pytest.raises(JinjaboardYamlError) as excinfo:
+        _render(hass, root)
+    assert "child.yaml.j2" in str(excinfo.value)
 
 
 def test_unrecognized_tag_becomes_yaml_error(

@@ -15,9 +15,24 @@ class JinjaboardError(Exception):
 
 
 class JinjaboardTemplateError(JinjaboardError):
-    """Raised when Jinja2 rendering itself fails (bad syntax, runtime error)."""
+    """Raised when Jinja2 rendering itself fails (bad syntax, runtime error).
+
+    `line` is folded into the message eagerly (`Line N: ...`) rather than
+    left for a caller to prepend later. This matters once `!include` is
+    involved: `includes.py`'s `_render_included_file` builds a readable
+    include chain by repeatedly prepending "in included file X (included at
+    line N): " to `str(err)` as the error propagates out of each nested
+    `!include`, so a deeper error's own `Line N:` must already be anchored
+    next to *its* message before an outer hop's prefix lands in front of it
+    — otherwise a single "Line N:" glued onto the very front of the whole
+    chain (which is what `websocket.py` used to do) reads as if it belongs
+    to the outermost file mentioned, when it actually belongs to the
+    innermost one.
+    """
 
     def __init__(self, message: str, line: int | None = None) -> None:
+        if line is not None:
+            message = f"Line {line}: {message}"
         super().__init__(message)
         self.line = line
 
