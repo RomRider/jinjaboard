@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .errors import JinjaboardIncludeNotFoundError
 from .path_guard import JinjaboardPathError, resolve_config_path
+from .template_allowlist import is_template_authorized
 from .template_engine import (
     JinjaboardTemplateError,
     JinjaboardYamlError,
@@ -51,6 +52,16 @@ async def handle_render(
         path = resolve_config_path(hass, relative_path)
     except JinjaboardPathError as err:
         connection.send_error(msg["id"], "path_traversal", str(err))
+        return
+
+    if not is_template_authorized(hass, path):
+        connection.send_error(
+            msg["id"],
+            "template_not_authorized",
+            f"Template '{relative_path}' is not on JinjaBoard's authorized "
+            "files list. Add it in Settings → Devices & Services → "
+            "JinjaBoard → Configure.",
+        )
         return
 
     try:

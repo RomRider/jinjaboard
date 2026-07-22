@@ -343,8 +343,57 @@ just the last `.`-segment like real HA's single `os.path.splitext`.
 ### Error codes
 
 WS errors use a fixed set of codes (`path_missing`, `path_traversal`,
-`include_not_found`, `template_error`, `yaml_parse_error`, and the
-not-yet-triggerable `render_timeout`), sent via `connection.send_error`, so
-the frontend can branch and show a specific message instead of a blank
-dashboard. Keep `websocket.py`'s error-code table and `src/types.ts`'s
-`JinjaboardErrorCode` union in sync by hand.
+`template_not_authorized`, `include_not_found`, `template_error`,
+`yaml_parse_error`, and the not-yet-triggerable `render_timeout`), sent via
+`connection.send_error`, so the frontend can branch and show a specific
+message instead of a blank dashboard. Keep `websocket.py`'s error-code table
+and `src/types.ts`'s `JinjaboardErrorCode` union in sync by hand.
+
+### Template allowlist (`template_allowlist.py`)
+
+`path_guard.py` (above) is a traversal *guard* — it confines paths to
+`config_dir`, but doesn't say which of those paths an admin actually
+trusts as a dashboard entry point. `template_allowlist.py` adds that layer:
+an admin-managed list, stored in the (single) config entry's `options`
+under `CONF_ALLOWED_TEMPLATES` and edited via `config_flow.py`'s
+`JinjaboardOptionsFlowHandler` (Settings → Devices & Services → JinjaBoard
+→ Configure → Add/Remove/View), of files and directory-prefixes permitted
+as the *top-level* `template:` param of `jinjaboard/render`. Checked in
+`websocket.py::handle_render` right after `resolve_config_path`, before the
+file is read, against the resolved `Path` (not the raw string) so `.`/`..`
+and directory-prefix matching (`Path.is_relative_to`, not a string
+`startswith` — a `dashboards` entry must not match `dashboards-backup/...`)
+are handled consistently with the rest of the path-resolution code.
+
+**Deliberately secure-by-default**: an empty allowlist rejects every
+render, including immediately after a fresh install or upgrade — this is a
+breaking-by-design choice (confirmed with the requester), not an oversight;
+the admin must populate the list before any dashboard using this
+integration will render.
+
+**Deliberately scoped to only the top-level `template:`**: once a template
+passes the allowlist, everything it reaches via `!include`/
+`!include_dir_*`/`macros:` is unrestricted, same as before this module
+existed. Those already have their own traversal guard
+(`resolve_config_path`, resolved relative to the *including* file) and
+re-checking every included file against the allowlist would make an
+authorized template unable to pull in its own helper files — the allowlist
+answers "is this file allowed to be a dashboard entry point", not "is every
+file it might reference safe".
+
+**Add-time validation is path-confinement only** (reuses
+`resolve_config_path`, same as the render-time check) — deliberately *not*
+also requiring the file to exist on disk, so an admin can pre-declare a
+path for a template they'll create afterward, matching the file-doesn't-
+need-to-exist-yet nature of admin-driven config in general.
+
+Because enforcement is secure-by-default, `tests/conftest.py`'s shared
+`config_entry` fixture authorizes the whole config directory (a single
+`{"path": "", "is_dir": True}` entry — `resolve_config_path(hass, "")`
+resolves to `config_dir` itself) so the large majority of tests that exist
+to test rendering/includes/macros, not the allowlist itself, don't each
+need their own allowlist wiring. Tests that exercise the allowlist directly
+(`tests/test_template_allowlist.py`, the allowlist-specific cases in
+`tests/test_websocket.py`, and `tests/test_config_flow.py`'s options-flow
+tests) build their own narrower `MockConfigEntry` instead of using that
+fixture.

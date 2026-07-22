@@ -57,11 +57,37 @@ Via [HACS](https://hacs.xyz/): add this repository as a custom repository
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RomRider&repository=jinjaboard&category=integration)
 
 After installing, go to **Settings → Devices & Services → Add Integration**
-and add **JinjaBoard**. There's nothing to configure — this step just
-activates the integration. Only one instance is needed per Home Assistant
-install.
+and add **JinjaBoard**. Only one instance is needed per Home Assistant
+install. Before any dashboard will render, an admin needs to authorize its
+template file — see [Authorizing template files](#authorizing-template-files)
+below.
 
 ## Usage
+
+### Authorizing template files
+
+An admin must explicitly authorize every file that's allowed to be used as
+a top-level `template:` (a dashboard, view, or section strategy's entry
+point) — nothing renders until it's on this list, including right after
+installing or upgrading. Manage it from **Settings → Devices & Services →
+JinjaBoard → Configure**:
+
+- **Add a file or folder** — path is relative to the Home Assistant config
+  directory, same as `template:` itself. Toggle "Folder" to authorize every
+  file recursively under that directory instead of a single file.
+- **Remove a file or folder**
+- **View authorized files**
+
+Using an unauthorized file as a `template:` shows a `template_not_authorized`
+error card instead of rendering (see [Error handling](#error-handling)).
+
+This only gates the top-level `template:` path. Files it reaches via
+`!include`/`!include_dir_*`/`macros:` are **not** separately checked against
+this list — once a template is authorized, its own includes and macros work
+as normal, confined to the config directory the same way they always have
+been (see `path_traversal` below).
+
+
 
 ### 1. Write a template
 
@@ -471,6 +497,7 @@ a blank screen. Error codes:
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `path_missing`      | The root template file doesn't exist or can't be read                                                                       |
 | `path_traversal`    | A template or include path resolves outside the Home Assistant config directory                                             |
+| `template_not_authorized` | The `template:` path isn't on JinjaBoard's admin-managed allowlist — see [Authorizing template files](#authorizing-template-files) |
 | `include_not_found` | An `!include`d file doesn't exist                                                                                           |
 | `template_error`    | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include problem was detected                   |
 | `yaml_parse_error`  | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block |

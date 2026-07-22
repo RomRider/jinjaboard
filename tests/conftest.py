@@ -10,7 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.jinjaboard.const import DOMAIN
+from custom_components.jinjaboard.const import CONF_ALLOWED_TEMPLATES, DOMAIN
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
@@ -48,8 +48,20 @@ def write_template(hass: HomeAssistant) -> Callable[[str, str], Path]:
 
 @pytest.fixture
 async def config_entry(hass: HomeAssistant) -> MockConfigEntry:
-    """A field-less JinjaBoard config entry, set up and ready."""
-    entry = MockConfigEntry(domain=DOMAIN)
+    """A JinjaBoard config entry, set up and ready.
+
+    The template allowlist (see `template_allowlist.py`) is secure-by-
+    default — an empty list rejects every render — so this fixture
+    authorizes the whole config dir (`resolve_config_path(hass, "")`
+    resolves to `config_dir` itself) to keep every test that isn't
+    specifically about the allowlist unaffected. Tests exercising the
+    allowlist itself build their own narrower `MockConfigEntry` instead of
+    using this fixture.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={CONF_ALLOWED_TEMPLATES: [{"path": "", "is_dir": True}]},
+    )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

@@ -10,5 +10,42 @@
                 "description": "Lovelace is running in YAML resource mode, so JinjaBoard can't register its frontend module automatically. Add this to your `configuration.yaml` and restart Home Assistant:\n\n```yaml\nlovelace:\n  resources:\n    - url: {resource_url}\n      type: module\n```"
             }
         }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Manage authorized template files",
+                "description": "{count} file(s)/folder(s) currently authorized. A dashboard, view, or section `template` must be on this list to render — anything else is rejected.",
+                "menu_options": {
+                    "add_entry": "Add a file or folder",
+                    "remove_entry": "Remove a file or folder",
+                    "view_entries": "View authorized files"
+                }
+            },
+            "add_entry": {
+                "title": "Authorize a file or folder",
+                "description": "Path is relative to the Home Assistant config directory, same as a dashboard's `strategy.template`. Enable \"Folder\" to authorize every file recursively under that directory instead of a single file.",
+                "data": {
+                    "path": "Path",
+                    "is_dir": "Folder"
+                }
+            },
+            "remove_entry": {
+                "title": "Remove an authorized file or folder",
+                "data": {
+                    "entry_index": "File or folder to remove"
+                }
+            },
+            "view_entries": {
+                "title": "Authorized files",
+                "description": "{listing}"
+            }
+        },
+        "error": {
+            "path_traversal": "That path escapes the Home Assistant config directory."
+        },
+        "abort": {
+            "no_entries": "No files or folders are currently authorized."
+        }
     }
 }
