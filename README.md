@@ -276,6 +276,15 @@ A few things worth knowing:
   stripped, e.g. `kitchen.yaml.j2` → `kitchen`.
 - Circular includes and excessively deep include chains fail with a clear
   error naming the chain, rather than hanging or crashing.
+- **Home Assistant caps a single template's rendered output at 256 KiB**
+  (`homeassistant.helpers.template.MAX_TEMPLATE_OUTPUT`) — exceeding it
+  raises a `template_error`. This applies per file, not per dashboard: the
+  root template and every `!include`d file are rendered independently, so
+  a large dashboard built from many smaller included files has no overall
+  size limit. If you hit this, it usually means one file has an inline
+  `{% for %}` loop generating too much — split that loop's output across
+  multiple files with `!include_dir_list`/`!include_dir_merge_list`
+  instead of generating it all inline in one place.
 
 ### Macros
 
