@@ -109,12 +109,19 @@ async def handle_render(
         # `template_error` above — without it, a YAML error inside an
         # included file would show the same generic sentence as one in the
         # root template, with no indication of which file actually failed.
+        # The preview is appended as its own paragraph, starting on a fresh
+        # line, and *not* through `!r` (which would escape its real
+        # newlines to literal `\n` text, collapsing what's usually
+        # multi-line rendered YAML into one unreadable line) — the raw
+        # rendered output's own line breaks carry real information about
+        # where the indentation went wrong, so they need to survive
+        # into what the frontend renders as a fenced code block.
         preview = err.raw_output[:_RAW_OUTPUT_PREVIEW_CHARS]
         connection.send_error(
             msg["id"],
             "yaml_parse_error",
             f"{err}. Check indentation around any {{% for %}}/{{% if %}} "
-            f"blocks. Raw output (truncated): {preview!r}",
+            f"blocks. Raw output (truncated):\n{preview}",
         )
         return
 

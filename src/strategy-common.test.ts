@@ -48,6 +48,21 @@ describe("errorCard", () => {
     }
     expect(codeBlockLines.join(" ")).toBe(longMessage);
   });
+
+  it("wraps only the prose before the first newline, leaving verbatim content after it untouched", () => {
+    // yaml_parse_error's message is "<prose sentence>\n<raw rendered YAML>"
+    // (see websocket.py) — the raw part must survive exactly as sent, long
+    // lines and all, so its original indentation stays legible; wrapping it
+    // would reflow it and lose that indentation entirely.
+    const longRawLine = "    content: \"Second card has bad indentation, breaking the whole parse.\"";
+    const rawOutput = `cards:\n  - type: markdown\n${longRawLine}\n  - type: markdown\n`;
+    const message = `Rendered template output was not valid YAML. Raw output (truncated):\n${rawOutput}`;
+    const card = errorCard({ code: "yaml_parse_error", message });
+
+    const codeBlockContent = card.content.split("```")[1];
+    expect(codeBlockContent).toContain(`\n${rawOutput}`);
+    expect(codeBlockContent).toContain(longRawLine);
+  });
 });
 
 describe("createStrategyGenerate", () => {

@@ -52,9 +52,9 @@ const DEFAULT_PRESENTATION: ErrorPresentation = { icon: "⚠️", title: "JinjaB
 // entirely, especially for the long, single-line messages an include-chain
 // error produces (`in included file 'x' (included at line N): in included
 // file 'y' ...`), silently hiding most of the message instead of wrapping
-// it. Soft-wrapping onto multiple lines ourselves, at word boundaries,
-// keeps the whole message visible without needing card-level CSS control
-// (a markdown card's `content` is plain text; there's no `card_mod`-style
+// it. Soft-wrapping the prose onto multiple lines ourselves, at word
+// boundaries, keeps it visible without needing card-level CSS control (a
+// markdown card's `content` is plain text; there's no `card_mod`-style
 // styling hook available here).
 // A default single-column masonry card is ~458px wide in practice (measured
 // live) — at the markdown card's 12px monospace code font that's ~63
@@ -62,11 +62,27 @@ const DEFAULT_PRESENTATION: ErrorPresentation = { icon: "⚠️", title: "JinjaB
 // 60 leaves a small margin rather than wrapping right at the edge.
 const CODE_BLOCK_WRAP_WIDTH = 60;
 
-function wrapForCodeBlock(text: string, width = CODE_BLOCK_WRAP_WIDTH): string {
-  return text
-    .split("\n")
-    .map((line) => wrapLine(line, width))
-    .join("\n");
+/**
+ * Word-wraps only the message's first line (the prose sentence, e.g.
+ * "Rendered template output was not valid YAML. ... Raw output
+ * (truncated):"), leaving everything from the first embedded newline
+ * onward completely untouched.
+ *
+ * That second part is verbatim, structured content — currently the
+ * yaml_parse_error preview of the actual rendered YAML — not prose:
+ * reflowing it at word boundaries destroys the very line breaks/
+ * indentation the reader needs to spot the problem (confirmed live: a
+ * wrapped continuation line loses the original line's leading indentation
+ * entirely, which is exactly the kind of detail a YAML indentation bug
+ * report can't afford to lose). Left alone, `overflow-x: auto` on the
+ * code block lets a too-long raw-output line scroll horizontally instead.
+ */
+function formatMessageForCodeBlock(message: string, width = CODE_BLOCK_WRAP_WIDTH): string {
+  const newlineIndex = message.indexOf("\n");
+  if (newlineIndex === -1) {
+    return wrapLine(message, width);
+  }
+  return wrapLine(message.slice(0, newlineIndex), width) + message.slice(newlineIndex);
 }
 
 function wrapLine(line: string, width: number): string {
@@ -96,7 +112,7 @@ export function errorCard(error: JinjaboardWsError) {
 
   const sections = [
     `## ${presentation.icon} ${presentation.title}`,
-    "```\n" + wrapForCodeBlock(message) + "\n```",
+    "```\n" + formatMessageForCodeBlock(message) + "\n```",
   ];
   if (presentation.hint) {
     sections.push(`💡 ${presentation.hint}`);
