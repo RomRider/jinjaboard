@@ -9,3 +9,29 @@ views:
       - type: markdown
         content: "Room: {{ room.name }}, Temperature: {{ room.temperature }}°C"
       {% endfor %}
+  - title: Client Context
+    icon: mdi:account-badge-outline
+    cards:
+      - type: markdown
+        content: |
+          ## jjb.user
+          Server-verified, from the authenticated WebSocket connection —
+          there's no request field for this, so it can't be spoofed by the
+          frontend.
+
+          - name: {{ jjb.user.name }}
+          - id: {{ jjb.user.id }}
+          - is_admin: {{ jjb.user.is_admin }}
+          - is_owner: {{ jjb.user.is_owner }}
+      - type: markdown
+        content: |
+          ## jjb.client
+          Frontend-supplied, best-effort — reload this dashboard after
+          resizing the browser window or toggling the HA theme to confirm
+          these track the real browser, not just a fixed test value.
+
+          - user_agent: {{ jjb.client.user_agent }}
+          - viewport: {{ jjb.client.viewport.width }}x{{ jjb.client.viewport.height }}
+          - language: {{ jjb.client.language | default('n/a') }}
+          - is_dark_theme: {{ jjb.client.is_dark_theme | default('n/a') }}
+          - browser_mod_id: {{ jjb.client.browser_mod_id | default('none — browser_mod not installed') }}
