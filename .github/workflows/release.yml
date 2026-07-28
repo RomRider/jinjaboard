@@ -182,6 +182,8 @@ jobs:
 
       - name: Build the frontend bundle
         working-directory: src
+        env:
+          NODE_ENV: production
         run: |
           npm ci
           npm run build
