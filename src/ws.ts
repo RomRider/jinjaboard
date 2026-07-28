@@ -37,7 +37,7 @@ function gatherClientContext(hass: HomeAssistant): ClientContext {
 export function renderTemplate(
   hass: HomeAssistant,
   template: string,
-  globals?: Record<string, unknown>,
+  globals?: Record<string, unknown> | string,
   macros?: string[],
 ): Promise<unknown> {
   const request: RenderRequest = {

@@ -51,3 +51,29 @@ class JinjaboardIncludeError(JinjaboardError):
 
 class JinjaboardIncludeNotFoundError(JinjaboardIncludeError):
     """Raised when an `!include`/`!include_dir_*` target doesn't exist."""
+
+
+class JinjaboardGlobalsError(JinjaboardError):
+    """Raised when a `globals:` file path resolves to invalid YAML or a
+    non-mapping top-level value.
+
+    Deliberately distinct from `JinjaboardYamlError`: that type's fixed
+    message ("Rendered template output was not valid YAML") and
+    `websocket.py`'s Jinja-specific follow-on hint are about the *rendered
+    template* pipeline — a `globals:` file is never Jinja-rendered, so
+    reusing that type/message here would be misleading.
+    """
+
+
+class JinjaboardNotAuthorizedError(JinjaboardError):
+    """Raised when a `globals:` file path or a `macros:` entry resolves to a
+    path that isn't on the admin's allowlist (see `template_allowlist.py`).
+
+    `template:` itself is checked directly in `websocket.py::handle_render`
+    (a boolean check with an early `connection.send_error`, not this
+    exception) since that check happens before any executor-job hop. This
+    exception exists because `globals:`/`macros:` resolution happens deeper
+    in the render pipeline, off the event loop, where raising and letting
+    `websocket.py` catch it is the only way back to the same
+    `template_not_authorized` WS error code.
+    """

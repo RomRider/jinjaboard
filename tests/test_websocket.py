@@ -39,6 +39,42 @@ async def test_render_passes_globals(
     assert response["result"] == {"value": "kitchen"}
 
 
+async def test_render_passes_globals_as_file_path(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("globals.yaml", "name: kitchen\n")
+    write_template("greet.yaml.j2", "value: {{ jjb.globals.name }}\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "greet.yaml.j2",
+            "globals": "globals.yaml",
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"value": "kitchen"}
+
+
+async def test_render_globals_file_invalid_yaml(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("globals.yaml", "- a\n- b\n")
+    write_template("greet.yaml.j2", "value: {{ jjb.globals.name }}\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "greet.yaml.j2",
+            "globals": "globals.yaml",
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "globals_error"
+
+
 async def test_render_passes_macros(
     hass: HomeAssistant, config_entry, hass_ws_client, write_template
 ) -> None:
@@ -353,6 +389,52 @@ async def test_render_succeeds_for_file_under_allowlisted_directory(
     response = await client.receive_json()
     assert response["success"] is True
     assert response["result"] == {"ok": True}
+
+
+async def test_render_rejects_globals_file_not_on_allowlist(
+    hass: HomeAssistant, hass_ws_client, write_template
+) -> None:
+    """`globals:` as a file path is a dashboard-author-controlled top-level
+    field, same trust boundary as `template:` — authorizing the template
+    alone must not implicitly authorize a `globals:` file it names."""
+    write_template("globals.yaml", "name: kitchen\n")
+    write_template("greet.yaml.j2", "value: {{ jjb.globals.name }}\n")
+    await _setup_narrow_entry(hass, [{"path": "greet.yaml.j2", "is_dir": False}])
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "greet.yaml.j2",
+            "globals": "globals.yaml",
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "template_not_authorized"
+
+
+async def test_render_rejects_macro_not_on_allowlist(
+    hass: HomeAssistant, hass_ws_client, write_template
+) -> None:
+    """`macros:` entries are checked the same way `globals:` file paths
+    are — authorizing the template alone doesn't authorize a `macros:`
+    entry it declares."""
+    write_template("macros/greet.yaml.j2", "{% macro hi() %}hi{% endmacro %}\n")
+    write_template("root.yaml.j2", "value: \"{{ jjb.macros.hi() }}\"\n")
+    await _setup_narrow_entry(hass, [{"path": "root.yaml.j2", "is_dir": False}])
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "root.yaml.j2",
+            "macros": ["macros/greet.yaml.j2"],
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "template_not_authorized"
 
 
 async def test_render_include_not_checked_against_allowlist(

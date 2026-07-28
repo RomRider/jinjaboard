@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from homeassistant.core import HomeAssistant
 
+from custom_components.jinjaboard.const import CONF_ALLOWED_TEMPLATES, DOMAIN
 from custom_components.jinjaboard.errors import (
     JinjaboardIncludeNotFoundError,
+    JinjaboardNotAuthorizedError,
     JinjaboardTemplateError,
 )
 from custom_components.jinjaboard.path_guard import JinjaboardPathError
@@ -14,7 +18,21 @@ from custom_components.jinjaboard.template_engine import render_template
 import pytest
 
 
-def _render(hass: HomeAssistant, path, **kwargs):
+def _render(hass: HomeAssistant, path, *, authorized: bool = True, **kwargs):
+    """Render, authorizing the whole config dir first (like `macros:` needs
+    now that it's checked against the allowlist — see `test_template_
+    allowlist.py`/`conftest.py`'s `config_entry` fixture for the same
+    pattern used at the WS layer). `add_to_hass` alone (no `async_setup`) is
+    enough since `template_allowlist.get_allowed_entries` only reads
+    `entries[0].options`, and keeps this helper usable from the plain `def`
+    (not `async def`) test functions in this file.
+    """
+    if authorized:
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            options={CONF_ALLOWED_TEMPLATES: [{"path": "", "is_dir": True}]},
+        )
+        entry.add_to_hass(hass)
     return render_template(hass, path, path.read_text(), **kwargs)
 
 
@@ -146,6 +164,16 @@ def test_macro_path_traversal(hass: HomeAssistant, write_template) -> None:
     root = write_template("root.yaml.j2", "ok: true\n")
     with pytest.raises(JinjaboardPathError):
         _render(hass, root, macro_paths=["../../../../../../etc"])
+
+
+def test_unauthorized_macro_path(hass: HomeAssistant, write_template) -> None:
+    """`macros:` is a dashboard-author-controlled top-level field, same
+    trust boundary as `template:` itself — a path under `config_dir` but
+    not on the admin's allowlist must be rejected, not silently compiled."""
+    write_template("macros/common.yaml.j2", "{% macro a() %}a{% endmacro %}\n")
+    root = write_template("root.yaml.j2", "ok: true\n")
+    with pytest.raises(JinjaboardNotAuthorizedError):
+        _render(hass, root, authorized=False, macro_paths=["macros/common.yaml.j2"])
 
 
 def test_macro_syntax_error_names_the_file(hass: HomeAssistant, write_template) -> None:

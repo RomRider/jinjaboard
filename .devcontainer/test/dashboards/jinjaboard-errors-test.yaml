@@ -56,3 +56,47 @@ views:
       template: test/jinjaboard/errors/macro_error.yaml.j2
       macros:
         - test/jinjaboard/errors/macros/bad.yaml.j2
+
+  - title: Invalid Globals File
+    icon: mdi:database-alert
+    strategy:
+      type: custom:jinjaboard
+      # globals: points at a real, readable file, but its top-level value
+      # is a list, not a mapping — globals files are never Jinja-rendered,
+      # so this is a plain YAML-shape error, not a template_error.
+      template: test/jinjaboard/errors/globals_root.yaml.j2
+      globals: test/jinjaboard/errors/globals_not_a_mapping.yaml
+
+  - title: Globals File Not Found
+    icon: mdi:database-search
+    strategy:
+      type: custom:jinjaboard
+      # Same include_not_found code a missing !include target produces —
+      # globals: is resolved with the same "referenced file wasn't found"
+      # handling, just for a different kind of reference.
+      template: test/jinjaboard/errors/globals_root.yaml.j2
+      globals: test/jinjaboard/errors/does_not_exist_globals.yaml
+
+  - title: Globals Not Authorized
+    icon: mdi:database-lock
+    strategy:
+      type: custom:jinjaboard
+      # Same trick as "Not Authorized" above: a real, valid, *existing*
+      # file — just not under the test/jinjaboard/errors/ prefix this
+      # dashboard's allowlist entry authorizes. globals: is a
+      # dashboard-author-controlled top-level field, same trust boundary as
+      # template: itself, so it's checked against the allowlist too — the
+      # root template here is never actually rendered, since this check
+      # runs first (its content doesn't matter for this test).
+      template: test/jinjaboard/errors/noop_root.yaml.j2
+      globals: test/jinjaboard/hello.yaml.j2
+
+  - title: Macro Not Authorized
+    icon: mdi:lock-alert-outline
+    strategy:
+      type: custom:jinjaboard
+      # Same as "Globals Not Authorized" above, for a macros: entry instead
+      # — an existing, valid file outside the authorized prefix.
+      template: test/jinjaboard/errors/noop_root.yaml.j2
+      macros:
+        - test/jinjaboard/hello.yaml.j2

@@ -9,10 +9,11 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
-from .errors import JinjaboardIncludeNotFoundError
+from .errors import JinjaboardIncludeNotFoundError, JinjaboardNotAuthorizedError
 from .path_guard import JinjaboardPathError, resolve_config_path
-from .template_allowlist import is_template_authorized
+from .template_allowlist import is_path_authorized
 from .template_engine import (
+    JinjaboardGlobalsError,
     JinjaboardTemplateError,
     JinjaboardYamlError,
     render_template,
@@ -33,7 +34,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     {
         vol.Required("type"): "jinjaboard/render",
         vol.Required("template"): str,
-        vol.Optional("globals"): dict,
+        vol.Optional("globals"): vol.Any(dict, str),
         vol.Optional("macros"): [str],
         vol.Optional("client"): {
             vol.Optional("user_agent"): str,
@@ -77,7 +78,7 @@ async def handle_render(
         connection.send_error(msg["id"], "path_traversal", str(err))
         return
 
-    if not is_template_authorized(hass, path):
+    if not is_path_authorized(hass, path):
         connection.send_error(
             msg["id"],
             "template_not_authorized",
@@ -121,9 +122,23 @@ async def handle_render(
         connection.send_error(msg["id"], "path_traversal", str(err))
         return
     except JinjaboardIncludeNotFoundError as err:
-        # Also covers a missing/unreadable `macros:` file or directory —
-        # same "referenced file wasn't found" shape as a missing `!include`.
+        # Also covers a missing/unreadable `macros:` file or directory, or a
+        # missing `globals:` file — same "referenced file wasn't found"
+        # shape as a missing `!include`.
         connection.send_error(msg["id"], "include_not_found", str(err))
+        return
+    except JinjaboardNotAuthorizedError as err:
+        # A `globals:` file path or a `macros:` entry that resolves outside
+        # the admin's allowlist — same code as the top-level `template:`
+        # check above (`is_path_authorized`), since both mean "this path
+        # isn't on JinjaBoard's authorized files list"; `str(err)` already
+        # names which kind of path failed.
+        connection.send_error(msg["id"], "template_not_authorized", str(err))
+        return
+    except JinjaboardGlobalsError as err:
+        # A `globals:` file that was found and authorized but isn't valid
+        # YAML, or whose top-level value isn't a mapping.
+        connection.send_error(msg["id"], "globals_error", str(err))
         return
     except JinjaboardTemplateError as err:
         # `str(err)` already carries its own "Line N:" (see

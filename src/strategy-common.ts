@@ -26,7 +26,7 @@ const ERROR_PRESENTATIONS: Record<JinjaboardErrorCode, ErrorPresentation> = {
   include_not_found: {
     icon: "🔗",
     title: "Include Not Found",
-    hint: "One of this template's `!include`/`!include_dir_*` targets (or a `macros:` entry) couldn't be found on disk.",
+    hint: "One of this template's `!include`/`!include_dir_*` targets, a `macros:` entry, or a `globals:` file path couldn't be found on disk.",
   },
   template_error: {
     icon: "🧩",
@@ -36,6 +36,11 @@ const ERROR_PRESENTATIONS: Record<JinjaboardErrorCode, ErrorPresentation> = {
   yaml_parse_error: {
     icon: "📄",
     title: "Invalid YAML Output",
+  },
+  globals_error: {
+    icon: "🌐",
+    title: "Invalid Globals File",
+    hint: "A `globals:` file must contain a valid YAML mapping at the top level — it's parsed as plain YAML, not rendered through Jinja.",
   },
   render_timeout: {
     icon: "⏱️",

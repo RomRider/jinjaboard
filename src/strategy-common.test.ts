@@ -65,6 +65,19 @@ describe("errorCard", () => {
   });
 });
 
+describe("errorCard for globals_error", () => {
+  it("renders a card for the globals_error code", () => {
+    const card = errorCard({
+      code: "globals_error",
+      message: "Globals file 'globals.yaml' must contain a YAML mapping at the top level, got list",
+    });
+
+    expect(card.type).toBe("markdown");
+    expect(card.content).toContain("Invalid Globals File");
+    expect(card.content).toContain("globals.yaml");
+  });
+});
+
 describe("createStrategyGenerate", () => {
   it("calls the error builder without calling callWS when template is missing", async () => {
     const callWS = vi.fn();
@@ -108,6 +121,24 @@ describe("createStrategyGenerate", () => {
         type: "jinjaboard/render",
         template: "home.yaml.j2",
         globals: { area_id: "kitchen" },
+      }),
+    );
+  });
+
+  it("forwards a string globals (a globals: file path) to the WS call", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const generate = createStrategyGenerate(vi.fn());
+
+    await generate(
+      { template: "home.yaml.j2", globals: "jinjaboard/globals.yaml" },
+      mockHass(callWS),
+    );
+
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "jinjaboard/render",
+        template: "home.yaml.j2",
+        globals: "jinjaboard/globals.yaml",
       }),
     );
   });

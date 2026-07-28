@@ -38,6 +38,21 @@ describe("renderTemplate", () => {
     );
   });
 
+  it("forwards a string globals value (a globals: file path) as-is", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const hass = mockHass(callWS);
+
+    await renderTemplate(hass, "home.yaml.j2", "jinjaboard/globals.yaml");
+
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "jinjaboard/render",
+        template: "home.yaml.j2",
+        globals: "jinjaboard/globals.yaml",
+      }),
+    );
+  });
+
   it("includes macros when given", async () => {
     const callWS = vi.fn().mockResolvedValue({ views: [] });
     const hass = mockHass(callWS);

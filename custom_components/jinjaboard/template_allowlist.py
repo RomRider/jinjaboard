@@ -1,14 +1,18 @@
-"""Admin-managed allowlist of files usable as a top-level `template`.
+"""Admin-managed allowlist of files usable as a dashboard-author-controlled
+entry point: the top-level `template:`, a `globals:` file path, or a
+`macros:` entry.
 
-Only the top-level `template` path passed to `jinjaboard/render`
-(`websocket.py`) is checked against this list. Once a template is
-authorized, everything it reaches via `!include`/`!include_dir_*`/
-`macros:` is unrestricted, same as before this module existed — those are
-already confined to `config_dir` by `path_guard.resolve_config_path` on
-every resolution, which is a traversal guard, not an authorization list.
-Re-checking every included file against the allowlist too would make a
-single authorized template unable to pull in its own helper files, which
-defeats the point of `!include` existing at all.
+These three are checked because they're all declared directly in the
+dashboard's own strategy config — the same trust boundary as `template:`
+itself, controlled by whoever can edit the dashboard, not by the admin.
+Everything reached *transitively* from inside one of those (via `!include`/
+`!include_dir_*`) is unrestricted, same as before this module existed —
+those are already confined to `config_dir` by `path_guard.
+resolve_config_path` on every resolution, which is a traversal guard, not
+an authorization list. Re-checking every included file against the
+allowlist too would make a single authorized template unable to pull in
+its own helper files, which defeats the point of `!include` existing at
+all.
 """
 
 from __future__ import annotations
@@ -43,8 +47,12 @@ def get_allowed_entries(hass: HomeAssistant) -> list[AllowlistEntry]:
     return entries[0].options.get(CONF_ALLOWED_TEMPLATES, [])
 
 
-def is_template_authorized(hass: HomeAssistant, resolved_path: Path) -> bool:
-    """Check `resolved_path` (already `resolve_config_path`-guarded) against the allowlist."""
+def is_path_authorized(hass: HomeAssistant, resolved_path: Path) -> bool:
+    """Check `resolved_path` (already `resolve_config_path`-guarded) against the allowlist.
+
+    Used for all three dashboard-author-controlled entry points:
+    `template:`, a `globals:` file path, and each `macros:` entry.
+    """
     for entry in get_allowed_entries(hass):
         try:
             allowed_path = resolve_config_path(hass, entry["path"])

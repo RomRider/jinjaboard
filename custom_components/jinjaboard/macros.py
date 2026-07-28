@@ -39,9 +39,14 @@ from typing import Any, Callable
 import jinja2.runtime
 from homeassistant.core import HomeAssistant
 
-from .errors import JinjaboardIncludeNotFoundError, JinjaboardTemplateError
+from .errors import (
+    JinjaboardIncludeNotFoundError,
+    JinjaboardNotAuthorizedError,
+    JinjaboardTemplateError,
+)
 from .includes import find_template_files
 from .path_guard import resolve_config_path
+from .template_allowlist import is_path_authorized
 
 # (hass, source, global_vars, user_vars, client_vars) ->
 # jinja2.TemplateModule. Injected rather than imported from
@@ -97,10 +102,16 @@ def build_macro_namespace(
 
     Each entry in `macro_paths` is resolved relative to `config_dir` (like
     `template` itself — there is no "current file" at the dashboard-config
-    level the way there is for `!include`), and confined to stay under it
-    via `path_guard.resolve_config_path`. A directory entry is walked
-    recursively exactly like `!include_dir_named`
-    (`includes.find_template_files`).
+    level the way there is for `!include`), confined to stay under it via
+    `path_guard.resolve_config_path`, and checked against the admin's
+    allowlist via `template_allowlist.is_path_authorized` — `macros:` is a
+    dashboard-author-controlled top-level field, the same trust boundary as
+    `template:` itself, not something reached transitively from inside an
+    already-authorized file. Only the declared entry itself is checked; a
+    directory entry is then walked recursively exactly like
+    `!include_dir_named` (`includes.find_template_files`), and files found
+    underneath it are unrestricted, same "top-level entry point only"
+    reasoning `template:` already uses for its own `!include` tree.
 
     Every macro defined in every resolved file is merged into one flat
     mapping, keyed by macro name — not by filename, so which file a macro
@@ -115,6 +126,12 @@ def build_macro_namespace(
     namespace: dict[str, Any] = {}
     for relative_path in macro_paths:
         target = resolve_config_path(hass, relative_path)
+        if not is_path_authorized(hass, target):
+            raise JinjaboardNotAuthorizedError(
+                f"Macro path '{relative_path}' is not on JinjaBoard's "
+                "authorized files list. Add it in Settings → Devices & "
+                "Services → JinjaBoard → Configure."
+            )
         if target.is_dir():
             for file_path in find_template_files(target):
                 relative_to = str(file_path.relative_to(target))

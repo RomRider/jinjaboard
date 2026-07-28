@@ -373,12 +373,26 @@ an admin-managed list, stored in the (single) config entry's `options`
 under `CONF_ALLOWED_TEMPLATES` and edited via `config_flow.py`'s
 `JinjaboardOptionsFlowHandler` (Settings → Devices & Services → JinjaBoard
 → Configure → Add/Remove/View), of files and directory-prefixes permitted
-as the *top-level* `template:` param of `jinjaboard/render`. Checked in
+as a **dashboard-author-controlled entry point**: the top-level `template:`
+param of `jinjaboard/render`, a `globals:` file path (`globals_file.py`),
+or each `macros:` entry (`macros.py`). These three share the same trust
+boundary — declared directly in the strategy config by whoever can edit
+the dashboard, not reached transitively from inside an already-authorized
+file. The check itself (`is_path_authorized`, resolved-`Path`-based, not
+string-based, so `.`/`..` and directory-prefix matching via
+`Path.is_relative_to` — not a string `startswith`, so a `dashboards` entry
+must not match `dashboards-backup/...` — are handled consistently with the
+rest of the path-resolution code) is a single function shared by all three
+call sites. For `template:` it's called directly in
 `websocket.py::handle_render` right after `resolve_config_path`, before the
-file is read, against the resolved `Path` (not the raw string) so `.`/`..`
-and directory-prefix matching (`Path.is_relative_to`, not a string
-`startswith` — a `dashboards` entry must not match `dashboards-backup/...`)
-are handled consistently with the rest of the path-resolution code.
+file is read — a boolean check with an early `connection.send_error`. For
+`globals:`/`macros:` it's called deeper in the render pipeline, off the
+event loop (`globals_file.resolve_global_vars` /
+`macros.build_macro_namespace`, both invoked from
+`template_engine.render_template`), so a failed check there raises
+`JinjaboardNotAuthorizedError` instead, caught by `websocket.py` and mapped
+to the same `template_not_authorized` WS error code — `str(err)` names
+which kind of path failed.
 
 **Deliberately secure-by-default**: an empty allowlist rejects every
 render, including immediately after a fresh install or upgrade — this is a
@@ -386,15 +400,18 @@ breaking-by-design choice (confirmed with the requester), not an oversight;
 the admin must populate the list before any dashboard using this
 integration will render.
 
-**Deliberately scoped to only the top-level `template:`**: once a template
-passes the allowlist, everything it reaches via `!include`/
-`!include_dir_*`/`macros:` is unrestricted, same as before this module
-existed. Those already have their own traversal guard
+**Deliberately scoped to only the three top-level entry points** (`template:`,
+`globals:`, `macros:`): once one of those passes the allowlist, everything
+it reaches via `!include`/`!include_dir_*` is unrestricted, same as before
+this module existed. Those already have their own traversal guard
 (`resolve_config_path`, resolved relative to the *including* file) and
 re-checking every included file against the allowlist would make an
 authorized template unable to pull in its own helper files — the allowlist
 answers "is this file allowed to be a dashboard entry point", not "is every
-file it might reference safe".
+file it might reference safe". `macros:`'s directory form is checked once,
+at the declared directory itself — files `find_template_files` discovers
+underneath it are not re-checked individually, same "top-level entry point
+only" reasoning.
 
 **Add-time validation is path-confinement only** (reuses
 `resolve_config_path`, same as the render-time check) — deliberately *not*
@@ -406,9 +423,11 @@ Because enforcement is secure-by-default, `tests/conftest.py`'s shared
 `config_entry` fixture authorizes the whole config directory (a single
 `{"path": "", "is_dir": True}` entry — `resolve_config_path(hass, "")`
 resolves to `config_dir` itself) so the large majority of tests that exist
-to test rendering/includes/macros, not the allowlist itself, don't each
-need their own allowlist wiring. Tests that exercise the allowlist directly
-(`tests/test_template_allowlist.py`, the allowlist-specific cases in
-`tests/test_websocket.py`, and `tests/test_config_flow.py`'s options-flow
-tests) build their own narrower `MockConfigEntry` instead of using that
-fixture.
+to test rendering/includes/macros/globals, not the allowlist itself, don't
+each need their own allowlist wiring — this now also covers `globals:`
+file paths and `macros:` entries used by those tests, not just `template:`.
+Tests that exercise the allowlist directly (`tests/test_template_
+allowlist.py`, the allowlist-specific cases in `tests/test_websocket.py`
+and `tests/test_macros.py`, `tests/test_globals_file.py`, and `tests/
+test_config_flow.py`'s options-flow tests) build their own narrower
+`MockConfigEntry` instead of using that fixture.

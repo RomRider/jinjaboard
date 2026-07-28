@@ -16,7 +16,8 @@ export interface ClientContext {
 export interface RenderRequest {
   type: "jinjaboard/render";
   template: string;
-  globals?: Record<string, unknown>;
+  /** A YAML mapping (inline) or a string path to a `globals:` file, relative to the HA config directory. */
+  globals?: Record<string, unknown> | string;
   macros?: string[];
   client?: ClientContext;
 }
@@ -28,6 +29,7 @@ export type JinjaboardErrorCode =
   | "include_not_found"
   | "template_error"
   | "yaml_parse_error"
+  | "globals_error"
   | "render_timeout";
 
 export interface JinjaboardWsError {
@@ -60,6 +62,7 @@ export interface HomeAssistant {
  */
 export interface StrategyConfig {
   template?: string;
-  globals?: Record<string, unknown>;
+  /** A YAML mapping (inline) or a string path to a `globals:` file, relative to the HA config directory. */
+  globals?: Record<string, unknown> | string;
   macros?: string[];
 }

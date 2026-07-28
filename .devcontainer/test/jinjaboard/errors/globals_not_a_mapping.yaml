@@ -1,0 +1,5 @@
+# A globals: file must be a YAML mapping — this is valid YAML, but a list,
+# not a mapping, so it triggers globals_error rather than yaml_parse_error
+# (there's no Jinja involved at all here; globals files are never rendered).
+- a
+- b

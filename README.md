@@ -68,9 +68,9 @@ below.
 
 An admin must explicitly authorize every file that's allowed to be used as
 a top-level `template:` (a dashboard, view, or section strategy's entry
-point) — nothing renders until it's on this list, including right after
-installing or upgrading. Manage it from **Settings → Devices & Services →
-JinjaBoard → Configure**:
+point), a `globals:` file path, or a `macros:` entry — nothing renders until
+it's on this list, including right after installing or upgrading. Manage it
+from **Settings → Devices & Services → JinjaBoard → Configure**:
 
 - **Add a file or folder** — path is relative to the Home Assistant config
   directory, same as `template:` itself. Toggle "Folder" to authorize every
@@ -78,14 +78,15 @@ JinjaBoard → Configure**:
 - **Remove a file or folder**
 - **View authorized files**
 
-Using an unauthorized file as a `template:` shows a `template_not_authorized`
-error card instead of rendering (see [Error handling](#error-handling)).
+Using an unauthorized file as a `template:`, `globals:`, or `macros:` entry
+shows a `template_not_authorized` error card instead of rendering (see
+[Error handling](#error-handling)).
 
-This only gates the top-level `template:` path. Files it reaches via
-`!include`/`!include_dir_*`/`macros:` are **not** separately checked against
-this list — once a template is authorized, its own includes and macros work
-as normal, confined to the config directory the same way they always have
-been (see `path_traversal` below).
+This only gates those three dashboard-author-controlled entry points. Files
+they reach via `!include`/`!include_dir_*` are **not** separately checked
+against this list — once a template is authorized, its own includes work as
+normal, confined to the config directory the same way they always have been
+(see `path_traversal` below).
 
 
 
@@ -149,6 +150,25 @@ strategy:
   not `{{ some_var }}`. This keeps your variables from accidentally clashing
   with Home Assistant's own built-in template variables (`states`, `now`,
   `area_id`, ...).
+
+  Instead of a mapping, `globals` can also be a string — a path to a
+  separate YAML file (relative to the config directory), which is convenient
+  if several dashboards should share the same globals, or if you'd rather
+  not keep them inline in a UI-created dashboard's raw config editor:
+
+  ```yaml
+  strategy:
+    type: custom:jinjaboard
+    template: jinjaboard/home.yaml
+    globals: jinjaboard/globals.yaml
+  ```
+
+  The globals file itself is plain YAML — it's **not** rendered through
+  Jinja, so `jjb.*` isn't available inside it, and it can't use
+  `!include`/`!include_dir_*`. Its top level must be a mapping. Like
+  `template` and `macros:`, a globals file path is checked against
+  JinjaBoard's [authorized files list](#authorizing-template-files) before
+  it's read.
 
 Save, and the dashboard renders your template's output. Re-opening the
 dashboard (or reloading the page) re-renders it — JinjaBoard doesn't
@@ -377,6 +397,10 @@ A few things worth knowing:
   `jjb.macros`'s namespace), only the macro names inside them.
 - A missing macro file or directory surfaces the same `include_not_found`
   error as a missing `!include` target.
+- Each declared `macros:` entry must be on the [authorized files
+  list](#authorizing-template-files), same as `template:` — an unauthorized
+  entry shows `template_not_authorized`. Files discovered inside an
+  authorized *directory* entry aren't separately checked.
 
 ### Who's viewing: `jjb.user` and `jjb.client`
 
@@ -546,10 +570,11 @@ a blank screen. Error codes:
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `path_missing`      | The root template file doesn't exist or can't be read                                                                       |
 | `path_traversal`    | A template or include path resolves outside the Home Assistant config directory                                             |
-| `template_not_authorized` | The `template:` path isn't on JinjaBoard's admin-managed allowlist — see [Authorizing template files](#authorizing-template-files) |
-| `include_not_found` | An `!include`d file doesn't exist                                                                                           |
+| `template_not_authorized` | The `template:` path, a `globals:` file path, or a `macros:` entry isn't on JinjaBoard's admin-managed allowlist — see [Authorizing template files](#authorizing-template-files) |
+| `include_not_found` | An `!include`d file, `macros:` entry, or `globals:` file doesn't exist                                                       |
 | `template_error`    | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include problem was detected                   |
 | `yaml_parse_error`  | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block |
+| `globals_error`     | A `globals:` file was found and authorized, but isn't valid YAML, or its top level isn't a mapping                          |
 | `render_timeout`    | (planned) rendering took too long                                                                                           |
 
 ## Development

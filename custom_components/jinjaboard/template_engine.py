@@ -16,13 +16,15 @@ from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.template import Template
 from homeassistant.util.async_ import run_callback_threadsafe
 
-from .errors import JinjaboardTemplateError, JinjaboardYamlError
+from .errors import JinjaboardGlobalsError, JinjaboardTemplateError, JinjaboardYamlError
+from .globals_file import resolve_global_vars
 from .includes import parse_with_includes
 from .macros import build_macro_namespace
 
 # Re-exported for websocket.py / callers that only need the exception types,
 # so most of the codebase can import them from here rather than .errors.
 __all__ = [
+    "JinjaboardGlobalsError",
     "JinjaboardTemplateError",
     "JinjaboardYamlError",
     "render_template",
@@ -418,7 +420,7 @@ def render_template(
     hass: HomeAssistant,
     path: Path,
     source: str,
-    global_vars: dict[str, Any] | None = None,
+    global_vars: dict[str, Any] | str | None = None,
     macro_paths: list[str] | None = None,
     user_vars: dict[str, Any] | None = None,
     client_vars: dict[str, Any] | None = None,
@@ -438,13 +440,19 @@ def render_template(
     (matching real Home Assistant's `!include`) and seeds the cycle-detection
     stack. `global_vars` becomes the render tree's `jjb.globals` — no
     `!include` has contributed `jjb.inc` vars yet, so that starts at `None`.
-    `macro_paths` (the dashboard's own `macros:`) is resolved once, up front,
-    into `jjb.macros` (see `macros.build_macro_namespace`) — unlike
-    `jjb.inc`, it never changes as the include tree is walked. `user_vars`
-    (`jjb.user`, derived by `websocket.py` from the authenticated WebSocket
-    connection) and `client_vars` (`jjb.client`, frontend-supplied and
-    unverifiable) are likewise constant for the whole tree.
+    `global_vars` may be a `str` (a `globals:` file path) instead of an
+    already-resolved `dict` — resolved once, up front, via
+    `globals_file.resolve_global_vars`, before it's used to build the macro
+    namespace below (a macro body sees `jjb.globals` too, so it must see the
+    resolved dict, not a raw path string). `macro_paths` (the dashboard's
+    own `macros:`) is resolved once, up front, into `jjb.macros` (see
+    `macros.build_macro_namespace`) — unlike `jjb.inc`, it never changes as
+    the include tree is walked. `user_vars` (`jjb.user`, derived by
+    `websocket.py` from the authenticated WebSocket connection) and
+    `client_vars` (`jjb.client`, frontend-supplied and unverifiable) are
+    likewise constant for the whole tree.
     """
+    global_vars = resolve_global_vars(hass, global_vars)
     macro_vars = build_macro_namespace(
         hass, macro_paths, global_vars, user_vars, client_vars, _compile_macro_module
     )
