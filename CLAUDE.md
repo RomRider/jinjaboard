@@ -170,6 +170,21 @@ Three more deliberate departures from the obvious approach, all load-bearing:
   `Undefined`/`UndefinedError`, the same as any other undefined access, so
   `| default(...)`/`is defined` guards work identically through `jjb`).
 
+- Two more sub-namespaces exist for the same reason `globals`/`inc` are
+  split apart: `jjb.user` (`name`/`id`/`is_admin`/`is_owner`) is derived by
+  `websocket.py::handle_render` from the WebSocket connection's own
+  authenticated `connection.user` — trustworthy, and there is deliberately
+  no `user` field in the request schema at all, so the frontend has no way
+  to override it. `jjb.client` (`user_agent`/`viewport`/`browser_mod_id`/
+  `language`/`is_dark_theme`) is the opposite: entirely frontend-supplied,
+  via an explicit voluptuous sub-schema on the `client` request field (not
+  a free `dict` like `globals` — this is protocol-level context, not
+  user-authored data), and unverifiable — useful for cosmetic/conditional
+  layout, never for anything security-sensitive. Both are threaded through
+  exactly like `global_vars`/`macro_vars` (constant for the whole render
+  tree, including inside macro bodies — see `macros.py`), never like
+  `inc_vars`.
+
 - `parse_result=False` is required. `Template.async_render`'s own default
   result-parsing uses `ast.literal_eval`, not `json.loads`/YAML — it doesn't
   matter for this project since we don't use it, but don't be tempted to rely

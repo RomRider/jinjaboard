@@ -103,11 +103,13 @@ describe("createStrategyGenerate", () => {
       mockHass(callWS),
     );
 
-    expect(callWS).toHaveBeenCalledWith({
-      type: "jinjaboard/render",
-      template: "home.yaml.j2",
-      globals: { area_id: "kitchen" },
-    });
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "jinjaboard/render",
+        template: "home.yaml.j2",
+        globals: { area_id: "kitchen" },
+      }),
+    );
   });
 
   it("forwards macros to the WS call", async () => {
@@ -119,12 +121,14 @@ describe("createStrategyGenerate", () => {
       mockHass(callWS),
     );
 
-    expect(callWS).toHaveBeenCalledWith({
-      type: "jinjaboard/render",
-      template: "home.yaml.j2",
-      globals: undefined,
-      macros: ["macros/common.yaml.j2"],
-    });
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "jinjaboard/render",
+        template: "home.yaml.j2",
+        globals: undefined,
+        macros: ["macros/common.yaml.j2"],
+      }),
+    );
   });
 
   it("calls the error builder with the rejected error on WS failure", async () => {

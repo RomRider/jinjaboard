@@ -83,6 +83,24 @@ def test_macro_available_inside_include(hass: HomeAssistant, write_template) -> 
     assert result == {"cards": [{"content": "HI"}]}
 
 
+def test_macro_can_see_jjb_user_and_client(hass: HomeAssistant, write_template) -> None:
+    """`jjb.user`/`jjb.client` are tree-position-independent like
+    `jjb.globals`, so (unlike `jjb.inc`) a macro body can reach them."""
+    write_template(
+        "macros/common.yaml.j2",
+        "{% macro who() %}{{ jjb.user.name }}/{{ jjb.client.language }}{% endmacro %}\n",
+    )
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.macros.who() }}\"\n")
+    result = _render(
+        hass,
+        root,
+        user_vars={"name": "kitchen-user"},
+        client_vars={"language": "en"},
+        macro_paths=["macros/common.yaml.j2"],
+    )
+    assert result == {"value": "kitchen-user/en"}
+
+
 def test_macro_cannot_see_inc_vars(hass: HomeAssistant, write_template) -> None:
     write_template(
         "macros/common.yaml.j2",

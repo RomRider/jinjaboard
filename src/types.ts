@@ -1,8 +1,24 @@
+/**
+ * Frontend-supplied, best-effort render-time context — entirely gathered
+ * client-side and unverifiable server-side (unlike `jjb.user`, which the
+ * backend derives from the authenticated WS connection itself). Useful for
+ * cosmetic/conditional-layout branching in a template, not for anything
+ * security-sensitive.
+ */
+export interface ClientContext {
+  user_agent?: string;
+  viewport?: { width: number; height: number };
+  browser_mod_id?: string;
+  language?: string;
+  is_dark_theme?: boolean;
+}
+
 export interface RenderRequest {
   type: "jinjaboard/render";
   template: string;
   globals?: Record<string, unknown>;
   macros?: string[];
+  client?: ClientContext;
 }
 
 export type JinjaboardErrorCode =
@@ -19,9 +35,16 @@ export interface JinjaboardWsError {
   message: string;
 }
 
-/** Minimal shape of the `hass` object the strategy elements need. */
+/**
+ * Minimal shape of the `hass` object the strategy elements need — a
+ * structural subset of home-assistant-frontend's real `HomeAssistant`
+ * interface (not installed as a dependency here), extended only with the
+ * fields actually read (`language`/`themes.darkMode`, for `jjb.client`).
+ */
 export interface HomeAssistant {
   callWS<T>(msg: object): Promise<T>;
+  language?: string;
+  themes?: { darkMode?: boolean };
 }
 
 /**

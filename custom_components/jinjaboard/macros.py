@@ -25,9 +25,10 @@ convention. Only `jinja2.runtime.Macro` values are kept (a stray top-level
 `{% set %}` in a macro file is not a macro and is silently excluded, rather
 than polluting `jjb.macros` with something uncallable).
 
-A macro file only ever sees `jjb.globals`, never `jjb.inc` — it's compiled
-once here, before any `!include` tree walk has contributed `inc` vars, so
-there's no meaningful, tree-position-specific `inc` value to give it.
+A macro file sees `jjb.globals`, `jjb.user`, and `jjb.client` — all constant
+for the whole render tree — but never `jjb.inc`: it's compiled once here,
+before any `!include` tree walk has contributed `inc` vars, so there's no
+meaningful, tree-position-specific `inc` value to give it.
 """
 
 from __future__ import annotations
@@ -42,16 +43,28 @@ from .errors import JinjaboardIncludeNotFoundError, JinjaboardTemplateError
 from .includes import find_template_files
 from .path_guard import resolve_config_path
 
-# (hass, source, global_vars) -> jinja2.TemplateModule. Injected rather than
-# imported from template_engine.py to avoid a circular import:
-# template_engine.py imports build_macro_namespace() from this module.
-CompileMacroModule = Callable[[HomeAssistant, str, "dict[str, Any] | None"], Any]
+# (hass, source, global_vars, user_vars, client_vars) ->
+# jinja2.TemplateModule. Injected rather than imported from
+# template_engine.py to avoid a circular import: template_engine.py imports
+# build_macro_namespace() from this module.
+CompileMacroModule = Callable[
+    [
+        HomeAssistant,
+        str,
+        "dict[str, Any] | None",
+        "dict[str, Any] | None",
+        "dict[str, Any] | None",
+    ],
+    Any,
+]
 
 
 def _compile_one(
     hass: HomeAssistant,
     file_path: Path,
     global_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
     compile_macro_module: CompileMacroModule,
     relative_to: str,
 ) -> Any:
@@ -62,7 +75,7 @@ def _compile_one(
             f"Macro file {relative_to!r} not found"
         ) from err
     try:
-        return compile_macro_module(hass, source, global_vars)
+        return compile_macro_module(hass, source, global_vars, user_vars, client_vars)
     except JinjaboardTemplateError as err:
         # Same "name the file" wrapping `includes.py`'s `_render_included_file`
         # does for `!include` — without it, a syntax/undefined-variable error
@@ -76,6 +89,8 @@ def build_macro_namespace(
     hass: HomeAssistant,
     macro_paths: list[str] | None,
     global_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
     compile_macro_module: CompileMacroModule,
 ) -> dict[str, Any]:
     """Resolve a dashboard's `macros:` entries into `{macro_name: Macro}`.
@@ -104,12 +119,24 @@ def build_macro_namespace(
             for file_path in find_template_files(target):
                 relative_to = str(file_path.relative_to(target))
                 module = _compile_one(
-                    hass, file_path, global_vars, compile_macro_module, relative_to
+                    hass,
+                    file_path,
+                    global_vars,
+                    user_vars,
+                    client_vars,
+                    compile_macro_module,
+                    relative_to,
                 )
                 _merge_macros(namespace, module, relative_to)
         elif target.is_file():
             module = _compile_one(
-                hass, target, global_vars, compile_macro_module, relative_path
+                hass,
+                target,
+                global_vars,
+                user_vars,
+                client_vars,
+                compile_macro_module,
+                relative_path,
             )
             _merge_macros(namespace, module, relative_path)
         else:

@@ -64,11 +64,13 @@ describe("ll-strategy-view-jinjaboard", () => {
       mockHass(callWS),
     );
 
-    expect(callWS).toHaveBeenCalledWith({
-      type: "jinjaboard/render",
-      template: "view.yaml.j2",
-      globals: { area_id: "kitchen" },
-    });
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "jinjaboard/render",
+        template: "view.yaml.j2",
+        globals: { area_id: "kitchen" },
+      }),
+    );
   });
 
   it("returns a view-shaped error with the code and message on WS rejection", async () => {

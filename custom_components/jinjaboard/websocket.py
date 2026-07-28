@@ -35,6 +35,16 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
         vol.Required("template"): str,
         vol.Optional("globals"): dict,
         vol.Optional("macros"): [str],
+        vol.Optional("client"): {
+            vol.Optional("user_agent"): str,
+            vol.Optional("viewport"): {
+                vol.Optional("width"): int,
+                vol.Optional("height"): int,
+            },
+            vol.Optional("browser_mod_id"): str,
+            vol.Optional("language"): str,
+            vol.Optional("is_dark_theme"): bool,
+        },
     }
 )
 @websocket_api.async_response
@@ -47,6 +57,19 @@ async def handle_render(
     relative_path = msg["template"]
     global_vars = msg.get("globals")
     macro_paths = msg.get("macros")
+    client_vars = msg.get("client")
+    # Not sourced from `msg` — the request schema has no `user` field at
+    # all, so there's no way for the frontend to override this. `jjb.user`
+    # is meant to be trustworthy (unlike `jjb.client`, entirely
+    # frontend-supplied and unverifiable), so it's always derived from the
+    # authenticated `connection.user` HA itself already resolved for this
+    # WebSocket connection.
+    user_vars = {
+        "name": connection.user.name,
+        "id": connection.user.id,
+        "is_admin": connection.user.is_admin,
+        "is_owner": connection.user.is_owner,
+    }
 
     try:
         path = resolve_config_path(hass, relative_path)
@@ -82,7 +105,14 @@ async def handle_render(
         # `run_callback_threadsafe` for the one call that must stay there
         # (`Template.async_render`).
         result = await hass.async_add_executor_job(
-            render_template, hass, path, source, global_vars, macro_paths
+            render_template,
+            hass,
+            path,
+            source,
+            global_vars,
+            macro_paths,
+            user_vars,
+            client_vars,
         )
     except JinjaboardPathError as err:
         # Raised here (rather than only by the resolve_config_path call
