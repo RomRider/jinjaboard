@@ -378,6 +378,55 @@ A few things worth knowing:
 - A missing macro file or directory surfaces the same `include_not_found`
   error as a missing `!include` target.
 
+### Who's viewing: `jjb.user` and `jjb.client`
+
+Every render also gets two more sub-namespaces, both constant across the
+whole render tree (like `jjb.globals`/`jjb.macros` — not per-`!include` like
+`jjb.inc`), available in the root template, every `!include`d file, and
+every macro body. Nothing needs to be declared in `strategy:` to use them.
+
+- **`jjb.user`** — the identity of whoever is viewing the dashboard, as
+  Home Assistant's own authentication already knows it:
+  `jjb.user.name`, `jjb.user.id`, `jjb.user.is_admin`,
+  `jjb.user.is_owner`. This comes entirely from the authenticated
+  WebSocket connection the render request arrived on — there's nothing to
+  configure, and no way for the frontend to override it. Trustworthy
+  enough to gate content on, e.g.:
+
+  ```yaml
+  {% if jjb.user.is_admin %}
+  - type: tile
+    entity: update.home_assistant_core_update
+  {% endif %}
+  ```
+
+- **`jjb.client`** — best-effort information about the browser rendering
+  the dashboard, gathered by the frontend itself and sent along with the
+  render request: `jjb.client.user_agent`, `jjb.client.viewport.width` /
+  `jjb.client.viewport.height`, `jjb.client.language`,
+  `jjb.client.is_dark_theme`, and `jjb.client.browser_mod_id` (only present
+  if the [`browser_mod`](https://github.com/thomasloven/hass-browser_mod)
+  custom integration is installed in the browser viewing the dashboard).
+  **Unlike `jjb.user`, none of this is verified** — it's exactly what the
+  browser reported at the moment it asked for the render, so treat it as a
+  layout hint, not an authorization check:
+
+  ```yaml
+  {% if jjb.client.viewport.width | default(1024) < 600 %}
+  - type: grid
+    columns: 1
+    cards: {{ light_tiles }}
+  {% else %}
+  - type: grid
+    columns: 3
+    cards: {{ light_tiles }}
+  {% endif %}
+  ```
+
+  Any field can be missing (e.g. no `browser_mod` installed, or a very old
+  frontend build) — use Jinja's `| default(...)` filter, same as any other
+  optional value, rather than assuming it's always set.
+
 ## Real-world examples
 
 **Every light, grouped by room, with zero upkeep.** The example under

@@ -63,11 +63,13 @@ describe("ll-strategy-dashboard-jinjaboard", () => {
       mockHass(callWS),
     );
 
-    expect(callWS).toHaveBeenCalledWith({
-      type: "jinjaboard/render",
-      template: "home.yaml.j2",
-      globals: { area_id: "kitchen" },
-    });
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "jinjaboard/render",
+        template: "home.yaml.j2",
+        globals: { area_id: "kitchen" },
+      }),
+    );
   });
 
   it("returns an error dashboard with the code and message on WS rejection", async () => {

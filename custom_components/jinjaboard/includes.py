@@ -59,15 +59,17 @@ _DIR_INCLUDE_PATTERNS = ("*.yaml", "*.yml", "*.yaml.j2", "*.yml.j2")
 # HA's single `os.path.splitext` (which would leave `foo.yaml`).
 _TEMPLATE_EXTENSIONS = (".yaml.j2", ".yml.j2", ".yaml", ".yml", ".j2")
 
-# (hass, path, source, global_vars, inc_vars, macro_vars, include_stack) ->
-# parsed result. Injected rather than imported from template_engine.py to
-# avoid a circular import: template_engine.py imports parse_with_includes()
-# from this module.
+# (hass, path, source, global_vars, inc_vars, macro_vars, user_vars,
+# client_vars, include_stack) -> parsed result. Injected rather than
+# imported from template_engine.py to avoid a circular import:
+# template_engine.py imports parse_with_includes() from this module.
 RenderAndParse = Callable[
     [
         HomeAssistant,
         Path,
         str,
+        "dict[str, Any] | None",
+        "dict[str, Any] | None",
         "dict[str, Any] | None",
         "dict[str, Any] | None",
         "dict[str, Any] | None",
@@ -133,6 +135,8 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         global_vars: dict[str, Any] | None,
         inc_vars: dict[str, Any] | None,
         macro_vars: dict[str, Any] | None,
+        user_vars: dict[str, Any] | None,
+        client_vars: dict[str, Any] | None,
         include_stack: list[Path],
         render_and_parse: RenderAndParse,
     ) -> None:
@@ -142,6 +146,8 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         self.global_vars = global_vars
         self.inc_vars = inc_vars
         self.macro_vars = macro_vars
+        self.user_vars = user_vars
+        self.client_vars = client_vars
         self.include_stack = include_stack
         self.render_and_parse = render_and_parse
 
@@ -153,6 +159,8 @@ def parse_with_includes(
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
     include_stack: list[Path],
     render_and_parse: RenderAndParse,
 ) -> Any:
@@ -160,8 +168,9 @@ def parse_with_includes(
 
     `current_dir` is the directory of the file `text` came from — `!include`
     targets inside it resolve relative to this directory, matching real HA.
-    `global_vars` (the dashboard's `globals:`, exposed as `jjb.globals`) and
-    `macro_vars` (the dashboard's `macros:`, exposed as `jjb.macros`) are
+    `global_vars` (the dashboard's `globals:`, exposed as `jjb.globals`),
+    `macro_vars` (the dashboard's `macros:`, exposed as `jjb.macros`),
+    `user_vars` (`jjb.user`), and `client_vars` (`jjb.client`) are all
     carried through unchanged; `inc_vars` (exposed as `jjb.inc`) is what a
     nested `!include ... vars:` layers on top of, in `_render_included_file`
     below.
@@ -175,6 +184,8 @@ def parse_with_includes(
             global_vars=global_vars,
             inc_vars=inc_vars,
             macro_vars=macro_vars,
+            user_vars=user_vars,
+            client_vars=client_vars,
             include_stack=include_stack,
             render_and_parse=render_and_parse,
         )
@@ -267,6 +278,8 @@ def _render_included_file(
             loader.global_vars,
             inc_vars,
             loader.macro_vars,
+            loader.user_vars,
+            loader.client_vars,
             [*loader.include_stack, target],
         )
     except (JinjaboardTemplateError, JinjaboardYamlError, JinjaboardIncludeError) as err:

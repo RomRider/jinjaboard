@@ -139,6 +139,8 @@ def _render_jinja(
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
 ) -> str:
     """Render `source` through Jinja, safe to call from any thread.
 
@@ -155,7 +157,9 @@ def _render_jinja(
     they take the direct branch, unchanged.
     """
     if threading.get_ident() == hass.loop_thread_id:
-        return _render_jinja_on_loop(hass, source, global_vars, inc_vars, macro_vars)
+        return _render_jinja_on_loop(
+            hass, source, global_vars, inc_vars, macro_vars, user_vars, client_vars
+        )
     return run_callback_threadsafe(
         hass.loop,
         _render_jinja_on_loop,
@@ -164,6 +168,8 @@ def _render_jinja(
         global_vars,
         inc_vars,
         macro_vars,
+        user_vars,
+        client_vars,
     ).result()
 
 
@@ -173,6 +179,8 @@ def _render_jinja_on_loop(
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
 ) -> str:
     """Render `source` through Jinja only, returning the raw rendered string.
 
@@ -212,6 +220,16 @@ def _render_jinja_on_loop(
     `{name: Macro}` dict in a `Namespace` is enough to get `jjb.macros.<name>`
     working the same as `jjb.globals`/`jjb.inc`.
 
+    `user_vars` (`jjb.user`: `name`/`id`/`is_admin`/`is_owner`) is derived
+    by `websocket.py` from the WebSocket connection's authenticated
+    `connection.user` — trustworthy, and never influenced by the request
+    payload. `client_vars` (`jjb.client`: `user_agent`/`viewport`/
+    `browser_mod_id`/`language`/`is_dark_theme`) is the opposite: entirely
+    frontend-supplied and unverifiable, useful for cosmetic/conditional
+    layout but not for anything security-sensitive. Both are constant for
+    the whole render tree, like `jjb.globals`/`jjb.macros` — never per-include
+    like `jjb.inc`.
+
     `source` has whole-line YAML comments blanked out first (see
     `_blank_out_comment_lines`) so a commented-out line's `{{ }}`/`{% %}`
     doesn't raise for code the author meant to disable.
@@ -224,6 +242,8 @@ def _render_jinja_on_loop(
                     globals=Namespace(global_vars or {}),
                     inc=Namespace(inc_vars or {}),
                     macros=Namespace(macro_vars or {}),
+                    user=Namespace(user_vars or {}),
+                    client=Namespace(client_vars or {}),
                 )
             },
             parse_result=False,
@@ -234,7 +254,11 @@ def _render_jinja_on_loop(
 
 
 def _compile_macro_module(
-    hass: HomeAssistant, source: str, global_vars: dict[str, Any] | None
+    hass: HomeAssistant,
+    source: str,
+    global_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
 ) -> Any:
     """Compile a macro file, safe to call from any thread.
 
@@ -245,14 +269,26 @@ def _compile_macro_module(
     `_render_jinja` — see its docstring for why.
     """
     if threading.get_ident() == hass.loop_thread_id:
-        return _compile_macro_module_on_loop(hass, source, global_vars)
+        return _compile_macro_module_on_loop(
+            hass, source, global_vars, user_vars, client_vars
+        )
     return run_callback_threadsafe(
-        hass.loop, _compile_macro_module_on_loop, hass, source, global_vars
+        hass.loop,
+        _compile_macro_module_on_loop,
+        hass,
+        source,
+        global_vars,
+        user_vars,
+        client_vars,
     ).result()
 
 
 def _compile_macro_module_on_loop(
-    hass: HomeAssistant, source: str, global_vars: dict[str, Any] | None
+    hass: HomeAssistant,
+    source: str,
+    global_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
 ) -> Any:
     """Compile a macro file and return its `jinja2.TemplateModule`.
 
@@ -271,10 +307,11 @@ def _compile_macro_module_on_loop(
     `_ensure_compiled` binds to `self._env` (the same per-`hass` cached
     `TemplateEnvironment` `Template.async_render` itself uses).
 
-    Only `jjb.globals` is available inside a macro body, not `jjb.inc`: a
-    macro module is compiled once, upfront, before any `!include` tree walk
-    starts contributing `inc` vars, so there is no meaningful `inc` value to
-    give it — see `macros.py`'s module docstring.
+    `jjb.globals`, `jjb.user`, and `jjb.client` are all available inside a
+    macro body — none of them vary by position in the include tree. Only
+    `jjb.inc` isn't: a macro module is compiled once, upfront, before any
+    `!include` tree walk starts contributing `inc` vars, so there is no
+    meaningful `inc` value to give it — see `macros.py`'s module docstring.
 
     Must run on the event loop for the same reason `_render_jinja_on_loop`
     must: `_ensure_compiled`/`make_module` execute compiled Jinja bytecode,
@@ -311,7 +348,14 @@ def _compile_macro_module_on_loop(
     try:
         compiled = template._ensure_compiled(strict=True)  # noqa: SLF001
         return compiled.make_module(
-            {"jjb": Namespace(globals=Namespace(global_vars or {}), inc=Namespace({}))}
+            {
+                "jjb": Namespace(
+                    globals=Namespace(global_vars or {}),
+                    inc=Namespace({}),
+                    user=Namespace(user_vars or {}),
+                    client=Namespace(client_vars or {}),
+                )
+            }
         )
     except TemplateError as err:
         raise JinjaboardTemplateError(str(err), line=_extract_lineno(err)) from err
@@ -331,6 +375,8 @@ def _render_and_parse(
     global_vars: dict[str, Any] | None,
     inc_vars: dict[str, Any] | None,
     macro_vars: dict[str, Any] | None,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
     include_stack: list[Path],
 ) -> Any:
     """Render `source` (already read from `path`) and parse it as YAML.
@@ -344,10 +390,13 @@ def _render_and_parse(
     whole render tree. `inc_vars` accumulates `!include ... vars:` as the
     tree is walked — see `includes.py`'s `_render_included_file` for how
     it's layered. `macro_vars` (the dashboard's own `macros:`, see
-    `macros.py`) is likewise constant for the whole tree, built once by
-    `render_template` before any include is walked.
+    `macros.py`), `user_vars` (`jjb.user`), and `client_vars` (`jjb.client`)
+    are likewise constant for the whole tree, built once by `render_template`
+    before any include is walked.
     """
-    raw = _render_jinja(hass, source, global_vars, inc_vars, macro_vars)
+    raw = _render_jinja(
+        hass, source, global_vars, inc_vars, macro_vars, user_vars, client_vars
+    )
     try:
         return parse_with_includes(
             hass,
@@ -356,6 +405,8 @@ def _render_and_parse(
             global_vars,
             inc_vars,
             macro_vars,
+            user_vars,
+            client_vars,
             include_stack,
             _render_and_parse,
         )
@@ -369,6 +420,8 @@ def render_template(
     source: str,
     global_vars: dict[str, Any] | None = None,
     macro_paths: list[str] | None = None,
+    user_vars: dict[str, Any] | None = None,
+    client_vars: dict[str, Any] | None = None,
 ) -> Any:
     """Render `source` (the file at `path`) as YAML with embedded Jinja.
 
@@ -387,9 +440,22 @@ def render_template(
     `!include` has contributed `jjb.inc` vars yet, so that starts at `None`.
     `macro_paths` (the dashboard's own `macros:`) is resolved once, up front,
     into `jjb.macros` (see `macros.build_macro_namespace`) — unlike
-    `jjb.inc`, it never changes as the include tree is walked.
+    `jjb.inc`, it never changes as the include tree is walked. `user_vars`
+    (`jjb.user`, derived by `websocket.py` from the authenticated WebSocket
+    connection) and `client_vars` (`jjb.client`, frontend-supplied and
+    unverifiable) are likewise constant for the whole tree.
     """
-    macro_vars = build_macro_namespace(hass, macro_paths, global_vars, _compile_macro_module)
+    macro_vars = build_macro_namespace(
+        hass, macro_paths, global_vars, user_vars, client_vars, _compile_macro_module
+    )
     return _render_and_parse(
-        hass, path, source, global_vars, None, macro_vars, include_stack=[path.resolve()]
+        hass,
+        path,
+        source,
+        global_vars,
+        None,
+        macro_vars,
+        user_vars,
+        client_vars,
+        include_stack=[path.resolve()],
     )

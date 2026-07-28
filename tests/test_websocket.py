@@ -74,6 +74,117 @@ async def test_render_macro_not_found(
     assert response["error"]["code"] == "include_not_found"
 
 
+async def test_render_exposes_jjb_user_from_authenticated_connection(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    """`jjb.user` is derived from the WS connection's own authenticated
+    user — not sent by the frontend, so there's no request field for it."""
+    write_template(
+        "whoami.yaml.j2",
+        "name: {{ jjb.user.name }}\nis_admin: {{ jjb.user.is_admin }}\n"
+        "is_owner: {{ jjb.user.is_owner }}\n",
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "whoami.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {
+        "name": "Mock User",
+        "is_admin": True,
+        "is_owner": False,
+    }
+
+
+async def test_render_jjb_user_reflects_read_only_user(
+    hass: HomeAssistant,
+    config_entry,
+    hass_ws_client,
+    hass_read_only_access_token,
+    write_template,
+) -> None:
+    write_template("whoami.yaml.j2", "is_admin: {{ jjb.user.is_admin }}\n")
+    client = await hass_ws_client(hass, access_token=hass_read_only_access_token)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "whoami.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"is_admin": False}
+
+
+async def test_render_passes_client_context(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template(
+        "device.yaml.j2",
+        "ua: {{ jjb.client.user_agent }}\n"
+        "width: {{ jjb.client.viewport.width }}\n"
+        "browser_mod_id: {{ jjb.client.browser_mod_id }}\n"
+        "language: {{ jjb.client.language }}\n"
+        "is_dark_theme: {{ jjb.client.is_dark_theme }}\n",
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "device.yaml.j2",
+            "client": {
+                "user_agent": "Mozilla/5.0",
+                "viewport": {"width": 1024, "height": 768},
+                "browser_mod_id": "kitchen-tablet",
+                "language": "en",
+                "is_dark_theme": True,
+            },
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {
+        "ua": "Mozilla/5.0",
+        "width": 1024,
+        "browser_mod_id": "kitchen-tablet",
+        "language": "en",
+        "is_dark_theme": True,
+    }
+
+
+async def test_render_jjb_client_defaults_safely_when_absent(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    """No `client` payload at all — `jjb.client.*` fields should be
+    reachable (as undefined) without raising under `strict=True`, matching
+    `jjb.globals`/`jjb.inc`'s existing behavior for an unset dashboard."""
+    write_template(
+        "device.yaml.j2", "ua: {{ jjb.client.user_agent | default('n/a') }}\n"
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "device.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"ua": "n/a"}
+
+
+async def test_render_rejects_malformed_client_payload(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("device.yaml.j2", "ok: true\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "device.yaml.j2",
+            "client": {"viewport": {"width": "not-a-number"}},
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "invalid_format"
+
+
 async def test_render_available_to_non_admin_user(
     hass: HomeAssistant,
     config_entry,
