@@ -151,6 +151,16 @@ strategy:
   with Home Assistant's own built-in template variables (`states`, `now`,
   `area_id`, ...).
 
+  A global's *value* can itself contain Jinja (`{{ }}` / `{% %}`) — e.g.
+  `some_var: "{{ 1 + 2 }}"` — which is rendered before it's exposed as
+  `jjb.globals.some_var`. Inside that Jinja you get `jjb.user`/`jjb.client`
+  (see below) and Home Assistant's own built-in template functions
+  (`states()`, `now()`, `area_id()`, ...), but not `jjb.globals` itself (a
+  value can't reference the very globals mapping it's part of — this
+  raises `template_error`) and not `jjb.inc`/`jjb.macros` (neither exists
+  yet at this point in rendering). This applies identically whether
+  `globals` is written inline here or loaded from a separate file, below.
+
   Instead of a mapping, `globals` can also be a string — a path to a
   separate YAML file (relative to the config directory), which is convenient
   if several dashboards should share the same globals, or if you'd rather
@@ -163,10 +173,11 @@ strategy:
     globals: jinjaboard/globals.yaml
   ```
 
-  The globals file itself is plain YAML — it's **not** rendered through
-  Jinja, so `jjb.*` isn't available inside it, and it can't use
-  `!include`/`!include_dir_*`. Its top level must be a mapping. Like
-  `template` and `macros:`, a globals file path is checked against
+  The globals file's own *structure* is plain YAML — parsed as-is, never
+  run through Jinja as a whole, so it can't use `!include`/`!include_dir_*`
+  and its top level must be a mapping. Its *values*, however, are
+  Jinja-rendered exactly like inline `globals:` values are (see above).
+  Like `template` and `macros:`, a globals file path is checked against
   JinjaBoard's [authorized files list](#authorizing-template-files) before
   it's read.
 

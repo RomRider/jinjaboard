@@ -60,8 +60,13 @@ class JinjaboardGlobalsError(JinjaboardError):
     Deliberately distinct from `JinjaboardYamlError`: that type's fixed
     message ("Rendered template output was not valid YAML") and
     `websocket.py`'s Jinja-specific follow-on hint are about the *rendered
-    template* pipeline — a `globals:` file is never Jinja-rendered, so
-    reusing that type/message here would be misleading.
+    template* pipeline — a `globals:` file's *structure* is never
+    Jinja-rendered as a whole, so this error is strictly about YAML-shape
+    validity (parse failure or non-mapping top level), and reusing that
+    type/message here would be misleading. A bad Jinja expression inside a
+    global's *value* is a separate failure mode, raised as
+    `JinjaboardTemplateError` by `template_engine._render_global_values`/
+    `_render_jinja`, not this class.
     """
 
 

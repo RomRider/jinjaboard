@@ -8,11 +8,19 @@ views:
       type: custom:jinjaboard
       template: test/jinjaboard/view_test.yaml.j2
       globals:
+        # `greeting` and each room's `note` are Jinja templates baked into
+        # the globals *values* (not the globals file/mapping structure
+        # itself) — confirms value-level Jinja rendering works the same
+        # way when JinjaBoard is used as a per-view strategy, not just a
+        # whole-dashboard strategy.
+        greeting: "Hello, {{ jjb.user.name }}! (client language: {{ jjb.client.language | default('n/a') }})"
         rooms:
           - name: Living Room
             temperature: 22
+            note: "Set by {{ jjb.user.name }}"
           - name: Bedroom
             temperature: 20
+            note: "Set by {{ jjb.user.name }}"
   - title: Sections
     type: sections
     sections:
@@ -25,6 +33,10 @@ views:
           type: custom:jinjaboard
           template: test/jinjaboard/section_test.yaml.j2
           globals:
+            # Same value-level Jinja rendering, exercised via a per-section
+            # strategy this time.
+            greeting: "Hello from the section, {{ jjb.user.name }}!"
             rooms:
               - name: Kitchen
                 temperature: 19
+                note: "Set by {{ jjb.user.name }}"

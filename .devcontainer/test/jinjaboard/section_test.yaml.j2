@@ -1,5 +1,7 @@
 cards:
+  - type: markdown
+    content: "{{ jjb.globals.greeting }}"
   {% for room in jjb.globals.rooms %}
   - type: markdown
-    content: "Section strategy room: {{ room.name }}, {{ room.temperature }}°C"
+    content: "Section strategy room: {{ room.name }}, {{ room.temperature }}°C ({{ room.note }})"
   {% endfor %}

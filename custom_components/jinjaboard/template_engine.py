@@ -416,6 +416,60 @@ def _render_and_parse(
         raise JinjaboardYamlError(raw) from err
 
 
+def _render_global_values(
+    hass: HomeAssistant,
+    value: Any,
+    user_vars: dict[str, Any] | None,
+    client_vars: dict[str, Any] | None,
+) -> Any:
+    """Recursively Jinja-render every string leaf of a resolved `globals:`
+    mapping (`str` values only — dict keys, and non-`str` leaves like `int`/
+    `float`/`bool`/`None`, are returned unchanged).
+
+    Applies uniformly to whatever `globals_file.resolve_global_vars`
+    returned, whether the dashboard's `globals:` was written inline or
+    loaded from a separate file — this function doesn't know or care which.
+    Values are only ever YAML/JSON-shaped (`dict`/`list`/`str`/`int`/
+    `float`/`bool`/`None`, no tuples), so recursing through `dict`/`list` and
+    rendering `str` is exhaustive.
+
+    Each leaf is rendered via `_render_jinja` with `global_vars`/`inc_vars`/
+    `macro_vars` all `None`, so `jjb.globals`/`jjb.inc`/`jjb.macros` come out
+    as empty `Namespace({})` in `_render_jinja_on_loop` — deliberately: a
+    global's value referencing `jjb.globals` would be a self-reference into
+    the very dict being built here (genuinely circular, unlike `jjb.inc`/
+    `jjb.macros`, which simply don't exist yet at this point in the render
+    pipeline, the same reasoning `macros.py` uses for omitting `jjb.inc`
+    from macro compilation). Referencing any of the three hits attribute
+    access on an empty `Namespace`, raising `JinjaboardTemplateError` under
+    `strict=True` — a clear error rather than silently resolving wrong.
+    `jjb.user`/`jjb.client` and HA's own built-in template globals (`states()`,
+    `now()`, `area_id()`, ...) remain available, since they come from
+    `user_vars`/`client_vars` (passed through) and the `Template` environment
+    itself, neither of which is circular.
+
+    Each leaf independently goes through `_render_jinja`'s existing on-loop/
+    off-loop thread dispatch and `JinjaboardTemplateError` wrapping — no
+    separate handling needed here. Calling it once per string leaf (rather
+    than once per file) means more loop round-trips when off-loop for a
+    globals mapping with many string values, but no correctness risk: every
+    `_render_jinja` call is fully self-contained, mutating no shared state.
+    """
+    if isinstance(value, str):
+        return _render_jinja(hass, value, None, None, None, user_vars, client_vars)
+    if isinstance(value, dict):
+        return {
+            key: _render_global_values(hass, val, user_vars, client_vars)
+            for key, val in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _render_global_values(hass, item, user_vars, client_vars)
+            for item in value
+        ]
+    return value
+
+
 def render_template(
     hass: HomeAssistant,
     path: Path,
@@ -444,7 +498,15 @@ def render_template(
     already-resolved `dict` — resolved once, up front, via
     `globals_file.resolve_global_vars`, before it's used to build the macro
     namespace below (a macro body sees `jjb.globals` too, so it must see the
-    resolved dict, not a raw path string). `macro_paths` (the dashboard's
+    resolved dict, not a raw path string). Every string leaf of that
+    resolved dict (recursively, through nested `dict`/`list` values — never
+    dict keys) is then itself rendered through Jinja by
+    `_render_global_values`, again before `macro_vars` is built, so a macro
+    body sees final values rather than literal `{{ }}` text. Inside a global
+    value's Jinja, `jjb.user`/`jjb.client` and HA's own built-in template
+    globals (`states()`, `now()`, `area_id()`, ...) are available, but
+    `jjb.globals`/`jjb.inc`/`jjb.macros` are deliberately empty — see
+    `_render_global_values`'s own docstring for why. `macro_paths` (the dashboard's
     own `macros:`) is resolved once, up front, into `jjb.macros` (see
     `macros.build_macro_namespace`) — unlike `jjb.inc`, it never changes as
     the include tree is walked. `user_vars` (`jjb.user`, derived by
@@ -453,6 +515,7 @@ def render_template(
     likewise constant for the whole tree.
     """
     global_vars = resolve_global_vars(hass, global_vars)
+    global_vars = _render_global_values(hass, global_vars, user_vars, client_vars)
     macro_vars = build_macro_namespace(
         hass, macro_paths, global_vars, user_vars, client_vars, _compile_macro_module
     )

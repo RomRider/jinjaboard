@@ -11,6 +11,7 @@ from custom_components.jinjaboard.errors import (
     JinjaboardGlobalsError,
     JinjaboardIncludeNotFoundError,
     JinjaboardNotAuthorizedError,
+    JinjaboardTemplateError,
 )
 from custom_components.jinjaboard.globals_file import resolve_global_vars
 from custom_components.jinjaboard.path_guard import JinjaboardPathError
@@ -94,3 +95,148 @@ def test_render_template_loads_globals_from_file(
     root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.area_id }}\"\n")
     result = render_template(hass, root, root.read_text(), global_vars="globals.yaml")
     assert result == {"value": "kitchen"}
+
+
+def test_inline_global_value_renders_jjb_user(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A global's *value* can itself be Jinja, referencing `jjb.user` — the
+    file's own structure stays plain YAML, but this string is rendered."""
+    _authorize_all(hass)
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.greeting }}\"\n")
+    result = render_template(
+        hass,
+        root,
+        root.read_text(),
+        global_vars={"greeting": "{{ jjb.user.name }}"},
+        user_vars={"name": "Jerome"},
+    )
+    assert result == {"value": "Jerome"}
+
+
+def test_file_global_value_renders_jjb_user(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Same as above, but the globals mapping is loaded from a file — inline
+    and file-sourced globals must render values identically."""
+    _authorize_all(hass)
+    write_template("globals.yaml", 'greeting: "{{ jjb.user.name }}"\n')
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.greeting }}\"\n")
+    result = render_template(
+        hass,
+        root,
+        root.read_text(),
+        global_vars="globals.yaml",
+        user_vars={"name": "Jerome"},
+    )
+    assert result == {"value": "Jerome"}
+
+
+def test_global_value_renders_jjb_client(
+    hass: HomeAssistant, write_template
+) -> None:
+    _authorize_all(hass)
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.lang }}\"\n")
+    result = render_template(
+        hass,
+        root,
+        root.read_text(),
+        global_vars={"lang": "{{ jjb.client.language }}"},
+        client_vars={"language": "en"},
+    )
+    assert result == {"value": "en"}
+
+
+def test_nested_dict_and_list_global_values_rendered(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Jinja rendering recurses through nested dict values and list
+    elements, leaving a plain literal string untouched."""
+    _authorize_all(hass)
+    root = write_template(
+        "root.yaml.j2",
+        "a: \"{{ jjb.globals.nested.a }}\"\n"
+        "b: \"{{ jjb.globals.nested.list[0] }}\"\n"
+        "c: \"{{ jjb.globals.nested.list[1] }}\"\n",
+    )
+    result = render_template(
+        hass,
+        root,
+        root.read_text(),
+        global_vars={
+            "nested": {
+                "a": "{{ jjb.user.name }}",
+                "list": ["{{ jjb.user.name }}", "static"],
+            }
+        },
+        user_vars={"name": "Jerome"},
+    )
+    assert result == {"a": "Jerome", "b": "Jerome", "c": "static"}
+
+
+def test_non_string_global_values_pass_through_unchanged(
+    hass: HomeAssistant, write_template
+) -> None:
+    """`int`/`bool`/`None` global values aren't stringified by the Jinja
+    render pass — only `str` leaves are rendered at all."""
+    _authorize_all(hass)
+    root = write_template(
+        "root.yaml.j2",
+        "count: {{ jjb.globals.count }}\n"
+        "enabled: {{ jjb.globals.enabled }}\n"
+        "empty: {{ jjb.globals.empty is none }}\n",
+    )
+    result = render_template(
+        hass,
+        root,
+        root.read_text(),
+        global_vars={"count": 3, "enabled": True, "empty": None},
+    )
+    assert result == {"count": 3, "enabled": True, "empty": True}
+
+
+def test_global_value_referencing_jjb_globals_raises(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A global's value can't reference `jjb.globals` — that would be a
+    self-reference into the very dict being built, so it's left empty and
+    raises rather than silently resolving wrong."""
+    _authorize_all(hass)
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.a }}\"\n")
+    with pytest.raises(JinjaboardTemplateError):
+        render_template(
+            hass,
+            root,
+            root.read_text(),
+            global_vars={"a": "{{ jjb.globals.other }}"},
+        )
+
+
+def test_global_value_referencing_jjb_inc_raises(
+    hass: HomeAssistant, write_template
+) -> None:
+    """`jjb.inc` doesn't exist yet at the point globals are rendered."""
+    _authorize_all(hass)
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.a }}\"\n")
+    with pytest.raises(JinjaboardTemplateError):
+        render_template(
+            hass,
+            root,
+            root.read_text(),
+            global_vars={"a": "{{ jjb.inc.foo }}"},
+        )
+
+
+def test_global_value_referencing_jjb_macros_raises(
+    hass: HomeAssistant, write_template
+) -> None:
+    """`jjb.macros` doesn't exist yet at the point globals are rendered."""
+    _authorize_all(hass)
+    root = write_template("root.yaml.j2", "value: \"{{ jjb.globals.a }}\"\n")
+    with pytest.raises(JinjaboardTemplateError):
+        render_template(
+            hass,
+            root,
+            root.read_text(),
+            global_vars={"a": "{{ jjb.macros.foo }}"},
+        )

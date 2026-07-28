@@ -8,10 +8,15 @@ file — useful since the project's primary workflow is pasting the
 where there's no file on disk to factor shared globals out of the way
 `!include`/`macros:` already let you factor out cards/macros.
 
-A globals file is deliberately **not** Jinja-rendered — it's parsed as
-plain, static YAML via `yaml.safe_load`, the same as an inline `globals:`
-mapping is just literal data today. No `jjb.*` context is available inside
-it, and it can't itself use `!include`/`!include_dir_*`.
+A globals file's own *structure* is deliberately never Jinja-rendered as a
+whole — it's parsed as plain, static YAML via `yaml.safe_load`, so it can't
+itself use `!include`/`!include_dir_*` or any other Jinja/YAML machinery.
+This module's job is resolve-and-parse only: `resolve_global_vars` always
+returns the raw, unrendered dict, regardless of whether `globals_param` was
+a file path or an already-inline mapping. The *values* inside that dict —
+whether file- or inline-sourced — are Jinja-rendered afterward, as a
+separate step, by `template_engine._render_global_values`, called from
+`render_template` right after this function returns.
 """
 
 from __future__ import annotations
