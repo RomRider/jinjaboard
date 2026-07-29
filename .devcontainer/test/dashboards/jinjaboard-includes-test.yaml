@@ -1,3 +1,6 @@
 strategy:
   type: custom:jinjaboard
   template: test/jinjaboard/includes/root_include.yaml.j2
+  debug:
+    - views.0.cards.1
+    - test/jinjaboard/includes/header.yaml.j2

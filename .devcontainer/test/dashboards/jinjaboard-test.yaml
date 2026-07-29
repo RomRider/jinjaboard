@@ -1,6 +1,8 @@
 strategy:
   type: custom:jinjaboard
   template: test/jinjaboard/hello.yaml.j2
+  debug:
+    - views.0.cards.3
   globals:
     rooms:
       - name: Living Room

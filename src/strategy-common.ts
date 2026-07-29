@@ -1,5 +1,12 @@
 import { renderTemplate } from "./ws";
-import type { HomeAssistant, JinjaboardErrorCode, JinjaboardWsError, StrategyConfig } from "./types";
+import type {
+  HomeAssistant,
+  JinjaboardDebugEnvelope,
+  JinjaboardDebugInfo,
+  JinjaboardErrorCode,
+  JinjaboardWsError,
+  StrategyConfig,
+} from "./types";
 
 interface ErrorPresentation {
   icon: string;
@@ -144,6 +151,148 @@ export function errorCard(error: JinjaboardWsError) {
 }
 
 /**
+ * Narrows `value` to the subtree at dot-separated `path` (e.g.
+ * `"views.2.cards.0"`) — a numeric segment indexes into an array the same
+ * as any other key, since bracket notation on a JS array accepts a
+ * numeric-looking string (`arr["0"] === arr[0]`), so no separate
+ * `Number()`/`isNaN` branching is needed. Returns `undefined` if the path
+ * doesn't resolve.
+ */
+function selectByPath(value: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((acc, segment) => {
+    if (acc === undefined || acc === null || segment === "") return acc;
+    return (acc as Record<string, unknown>)[segment];
+  }, value);
+}
+
+/**
+ * Resolves what to log as the "Result" entry for a given `debug` option:
+ * the full config for `true`/`undefined`, one selected subtree for a
+ * single path string, or an object keyed by each path (mapped to its own
+ * selected subtree) for a list — so a multi-path `debug:` list logs each
+ * requested subtree distinctly instead of collapsing them together.
+ */
+function selectDebugSubtree(fullConfig: unknown, outputPath: boolean | string | string[] | undefined): unknown {
+  if (typeof outputPath === "string") return selectByPath(fullConfig, outputPath);
+  if (Array.isArray(outputPath)) {
+    return Object.fromEntries(outputPath.map((path) => [path, selectByPath(fullConfig, path)]));
+  }
+  return fullConfig;
+}
+
+/**
+ * A non-admin's truthy `debug` request is silently downgraded server-side
+ * to the bare, unwrapped result — so the frontend must check the actual
+ * response shape, never assume the wrapped envelope just because it asked
+ * for one.
+ */
+function isDebugEnvelope(value: unknown): value is JinjaboardDebugEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "config" in value &&
+    "debug" in value &&
+    typeof (value as { debug: unknown }).debug === "object" &&
+    (value as { debug: unknown }).debug !== null
+  );
+}
+
+/**
+ * Finds the most specific file a dot-path's content came from: checks
+ * successively shorter prefixes of `path` against `origins`
+ * (`"views.2.cards.0"` -> `"views.2.cards"` -> `"views.2"` -> `"views"`,
+ * longest/most-specific first), falling back to `rootPath` if nothing
+ * matches — meaning that content lives directly in the root file (or
+ * came from a scalar `!include` that couldn't be attributed by identity,
+ * see `includes.py::_render_included_file`).
+ */
+function resolveOrigin(path: string, origins: Record<string, string>, rootPath: string): string {
+  const segments = path.split(".");
+  for (let length = segments.length; length > 0; length--) {
+    const prefix = segments.slice(0, length).join(".");
+    if (prefix in origins) return origins[prefix];
+  }
+  return rootPath;
+}
+
+function logRawText(path: string, text: string, rootPath: string, vars: Record<string, unknown> | undefined): void {
+  // eslint-disable-next-line no-console
+  console.groupCollapsed(path === rootPath ? "Raw template output (root)" : `Raw template output: ${path}`);
+  console.log(text);
+  // Root is never included in `include_vars` (it never has `inc_vars`),
+  // and a file `!include`d without a `vars:` mapping has no entry either
+  // — only shown when there's actually something to show.
+  if (vars) console.log("Vars:", vars);
+  console.groupEnd();
+}
+
+/**
+ * Partitions a non-`true`/`undefined` `debug` value into **file
+ * selectors** — entries that exactly match a key in `rawTexts`, i.e. a
+ * touched file's own display path, the same string already shown as the
+ * label on its `Raw template output: <path>` console group — and **path
+ * selectors**, everything else, resolved as a dot-path into the parsed
+ * result like before. Lets an author debug a specific `!include` directly
+ * by name (e.g. copy-pasted from a prior `debug: true` run) without first
+ * having to find its dot-path in the output.
+ */
+function splitDebugOption(
+  entries: string[],
+  rawTexts: Record<string, string>,
+): { pathSelectors: string[]; fileSelectors: string[] } {
+  return {
+    fileSelectors: entries.filter((entry) => entry in rawTexts),
+    pathSelectors: entries.filter((entry) => !(entry in rawTexts)),
+  };
+}
+
+function logDebugToConsole(
+  template: string,
+  info: JinjaboardDebugInfo,
+  outputPath: boolean | string | string[] | undefined,
+  fullConfig: unknown,
+): void {
+  const isFullDump = outputPath === true || outputPath === undefined;
+  const debugEntries: string[] =
+    typeof outputPath === "string" ? [outputPath] : Array.isArray(outputPath) ? outputPath : [];
+  const { pathSelectors, fileSelectors } = splitDebugOption(debugEntries, info.raw_texts);
+
+  // A debug value made entirely of file selectors doesn't correspond to
+  // one unambiguous subtree of the parsed result (a file's content might
+  // appear more than once, or be unidentifiable at all past an
+  // !include_dir_merge_* boundary) — Result is shown in full, same as
+  // `debug: true`, whenever there's no path selector to narrow it by.
+  const narrowResult = pathSelectors.length > 0;
+  const resultLabel = narrowResult ? `Result (${pathSelectors.join(", ")})` : "Result";
+  const resultValue = narrowResult
+    ? selectDebugSubtree(fullConfig, pathSelectors.length === 1 ? pathSelectors[0] : pathSelectors)
+    : fullConfig;
+
+  // eslint-disable-next-line no-console
+  console.groupCollapsed(`Jinjaboard: ${template} (${info.duration_ms}ms)`);
+  console.log(resultLabel, resultValue);
+
+  // No filter at all: show every touched file, since there's no specific
+  // subtree to narrow to. Otherwise show the union of explicit file
+  // selectors and origin-resolved files from any path selectors, deduped
+  // — e.g. two cards from the same include, or a file selector and a path
+  // selector pointing at the same file, only log that file once.
+  const filePaths = isFullDump
+    ? Object.keys(info.raw_texts)
+    : Array.from(
+        new Set([
+          ...fileSelectors,
+          ...pathSelectors.map((path) => resolveOrigin(path, info.origins, info.root_path)),
+        ]),
+      );
+  for (const path of filePaths) {
+    if (path in info.raw_texts) logRawText(path, info.raw_texts[path], info.root_path, info.include_vars[path]);
+  }
+
+  console.groupEnd();
+}
+
+/**
  * Builds the static `generate(config, hass)` HA looks up on a strategy
  * custom element — shared across the dashboard/view/section strategies,
  * which differ only in the registered tag and the error-result shape
@@ -161,9 +310,19 @@ export function createStrategyGenerate(buildErrorResult: (error: JinjaboardWsErr
       });
     }
 
+    const debugOption = config?.debug;
     try {
-      return await renderTemplate(hass, template, config?.globals, config?.macros);
+      const result = await renderTemplate(hass, template, config?.globals, config?.macros, debugOption);
+      if (isDebugEnvelope(result)) {
+        logDebugToConsole(template, result.debug, debugOption, result.config);
+        return result.config;
+      }
+      return result;
     } catch (err) {
+      if (debugOption) {
+        // eslint-disable-next-line no-console
+        console.error(`Jinjaboard: render failed for ${template}`, err);
+      }
       return buildErrorResult(err as JinjaboardWsError);
     }
   };

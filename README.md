@@ -441,6 +441,92 @@ every macro body. Nothing needs to be declared in `strategy:` to use them.
   frontend build) — use Jinja's `| default(...)` filter, same as any other
   optional value, rather than assuming it's always set.
 
+### Debugging a template: `debug:`
+
+Add `debug: true` to any dashboard/view/section's `strategy:` stanza and,
+the next time that strategy renders, the browser's JS console logs the
+render result in a collapsed group prefixed `Jinjaboard:` — the parsed
+config, the render duration, and the raw (post-Jinja, pre-YAML) output of
+every file the render touched, root **and** every `!include`/
+`!include_dir_*` it pulled in, each in its own nested collapsed group.
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: dashboards/home.yaml.j2
+  debug: true
+```
+
+Set `debug` to a dot-separated path instead of `true` to narrow the logged
+*parsed result* to one subtree, **and** narrow the raw output shown to just
+the file that subtree actually came from — useful once a dashboard has
+grown large enough, or split across enough included files, that dumping
+everything is unwieldy. Numeric segments index into a list, and a list of
+paths logs each one separately:
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: dashboards/home.yaml.j2
+  debug:
+    - "views.2.cards.0"   # only this one card's config + source file is logged
+    - "views.0.cards.1"
+```
+
+If a selected path's content lives directly in the root template rather
+than an `!include`d file, the root's raw output is shown instead — there's
+always a fallback, never an empty result.
+
+**Debugging a specific included file directly.** Finding a dot-path just
+to look at one `!include`d file's raw output is often more work than
+necessary — `debug` also accepts one of the exact file-path labels already
+shown as `Raw template output: <path>` in a `debug: true` run (or a list of
+several, to inspect more than one at once), letting you jump straight to
+that file's raw output (and its `Vars:`, if it has any) by name, without
+ever looking at the parsed result's structure:
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: dashboards/home.yaml.j2
+  debug:
+    - "cards_dir/kitchen.yaml.j2"
+    - "cards_dir/living.yaml.j2"
+```
+
+In this mode the parsed `Result` is shown **in full, unfiltered** — a file
+selector doesn't narrow it, since a file's content doesn't always
+correspond to one single subtree of the output (it might appear more than
+once, or not be separately identifiable at all past an
+`!include_dir_merge_*` boundary). A `debug` list can freely mix file
+selectors with dot-path selectors; `Result` narrows using only whichever
+dot-paths are present, while raw output is shown for every file either
+kind of entry resolves to.
+
+If an `!include`d file's raw output group is shown and that include used
+`vars:` (`!include {path: ..., vars: {...}}`), a `Vars:` entry is logged
+right alongside its raw text — the *effective* vars, i.e. exactly what
+`jjb.inc` resolves to inside that file, including anything inherited from
+an ancestor include's own `vars:` if this one didn't set its own. The root
+never has one, since it never has `!include ... vars:` of its own.
+
+Two edge cases are worth knowing about:
+- A file `!include`d whose entire content is a single bare value (e.g. just
+  a string or number, not a mapping/list) can't be matched back to a
+  specific path in the parsed result, so a `debug` path pointing at it
+  falls back to showing the root's raw output instead of that file's.
+- If the exact same file is `!include`d more than once (e.g. with different
+  `vars:` producing different rendered output each time), only the last
+  occurrence's raw output is kept — there's no way to distinguish between
+  repeated inclusions of one file in the console output.
+
+> [!NOTE]
+> `debug:` only takes effect for an **admin** user viewing the dashboard —
+> a non-admin's `debug: true` is silently ignored (the dashboard renders
+> normally, with nothing extra logged to the console). This is enforced
+> on the backend, not just hidden in the UI, so it can't be worked around
+> from the browser.
+
 ## Real-world examples
 
 **Every light, grouped by room, with zero upkeep.** The example under

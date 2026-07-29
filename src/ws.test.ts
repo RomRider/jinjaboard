@@ -102,6 +102,49 @@ describe("renderTemplate", () => {
     expect(request.client).not.toHaveProperty("is_dark_theme");
   });
 
+  it("includes debug (boolean) when given", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const hass = mockHass(callWS);
+
+    await renderTemplate(hass, "home.yaml.j2", undefined, undefined, true);
+
+    expect(callWS).toHaveBeenCalledWith(expect.objectContaining({ debug: true }));
+  });
+
+  it("includes debug (string output path) when given", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const hass = mockHass(callWS);
+
+    await renderTemplate(hass, "home.yaml.j2", undefined, undefined, "views.0");
+
+    expect(callWS).toHaveBeenCalledWith(expect.objectContaining({ debug: "views.0" }));
+  });
+
+  it("includes debug (list of output paths) when given", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const hass = mockHass(callWS);
+
+    await renderTemplate(hass, "home.yaml.j2", undefined, undefined, ["views.0", "views.1.cards.0"]);
+
+    expect(callWS).toHaveBeenCalledWith(
+      expect.objectContaining({ debug: ["views.0", "views.1.cards.0"] }),
+    );
+  });
+
+  it("omits debug when falsy or absent", async () => {
+    const callWS = vi.fn().mockResolvedValue({ views: [] });
+    const hass = mockHass(callWS);
+
+    await renderTemplate(hass, "home.yaml.j2");
+    await renderTemplate(hass, "home.yaml.j2", undefined, undefined, false);
+    await renderTemplate(hass, "home.yaml.j2", undefined, undefined, "");
+    await renderTemplate(hass, "home.yaml.j2", undefined, undefined, []);
+
+    for (const call of callWS.mock.calls) {
+      expect((call[0] as { debug?: unknown }).debug).toBeUndefined();
+    }
+  });
+
   it("resolves with the WS result on success", async () => {
     const result = { views: [{ title: "Home" }] };
     const hass = mockHass(vi.fn().mockResolvedValue(result));

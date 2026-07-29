@@ -60,8 +60,8 @@ _DIR_INCLUDE_PATTERNS = ("*.yaml", "*.yml", "*.yaml.j2", "*.yml.j2")
 _TEMPLATE_EXTENSIONS = (".yaml.j2", ".yml.j2", ".yaml", ".yml", ".j2")
 
 # (hass, path, source, global_vars, inc_vars, macro_vars, user_vars,
-# client_vars, include_stack) -> parsed result. Injected rather than
-# imported from template_engine.py to avoid a circular import:
+# client_vars, include_stack, debug_trace) -> parsed result. Injected
+# rather than imported from template_engine.py to avoid a circular import:
 # template_engine.py imports parse_with_includes() from this module.
 RenderAndParse = Callable[
     [
@@ -74,6 +74,7 @@ RenderAndParse = Callable[
         "dict[str, Any] | None",
         "dict[str, Any] | None",
         "list[Path]",
+        "dict[str, Any] | None",
     ],
     Any,
 ]
@@ -81,6 +82,20 @@ RenderAndParse = Callable[
 
 def _is_visible(name: str) -> bool:
     return not name.startswith(".")
+
+
+def _display_path(hass: HomeAssistant, path: Path) -> str:
+    """Config-dir-relative display path for `debug:` output — mirrors
+    `template_engine._debug_display_path` exactly (duplicated, not
+    imported, to avoid a circular import between the two modules: this
+    module is already imported by `template_engine.py`). Must compute the
+    identical key `_render_and_parse` uses for `raw_texts`, since
+    `_render_included_file` below tags `origin_by_id` with this same value
+    — a mismatch would silently break every `origins` lookup."""
+    try:
+        return str(path.relative_to(Path(hass.config.config_dir).resolve()))
+    except ValueError:
+        return str(path)
 
 
 def find_template_files(directory: Path) -> list[Path]:
@@ -139,6 +154,7 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         client_vars: dict[str, Any] | None,
         include_stack: list[Path],
         render_and_parse: RenderAndParse,
+        debug_trace: dict[str, Any] | None,
     ) -> None:
         super().__init__(stream)
         self.hass = hass
@@ -150,6 +166,7 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         self.client_vars = client_vars
         self.include_stack = include_stack
         self.render_and_parse = render_and_parse
+        self.debug_trace = debug_trace
 
 
 def parse_with_includes(
@@ -163,6 +180,7 @@ def parse_with_includes(
     client_vars: dict[str, Any] | None,
     include_stack: list[Path],
     render_and_parse: RenderAndParse,
+    debug_trace: dict[str, Any] | None,
 ) -> Any:
     """Parse `text` (already Jinja-rendered), resolving include tags.
 
@@ -188,6 +206,7 @@ def parse_with_includes(
             client_vars=client_vars,
             include_stack=include_stack,
             render_and_parse=render_and_parse,
+            debug_trace=debug_trace,
         )
 
     return yaml.load(text, Loader=_make_loader)
@@ -271,7 +290,7 @@ def _render_included_file(
         inc_vars = {**(inc_vars or {}), **extra_vars}
 
     try:
-        return loader.render_and_parse(
+        value = loader.render_and_parse(
             loader.hass,
             target,
             source,
@@ -281,12 +300,40 @@ def _render_included_file(
             loader.user_vars,
             loader.client_vars,
             [*loader.include_stack, target],
+            loader.debug_trace,
         )
     except (JinjaboardTemplateError, JinjaboardYamlError, JinjaboardIncludeError) as err:
         err.args = (
             f"in included file {relative_path!r} (included at line {node_line}): {err}",
         ) + err.args[1:]
         raise
+
+    if loader.debug_trace is not None and isinstance(value, (dict, list)):
+        # Tags this include's resolved value by Python object identity so
+        # `websocket.py` can later attribute a dot-path in the *final*
+        # parsed result back to the file it came from — object identity
+        # survives being placed into a new outer dict/list (by
+        # `!include_dir_list`/`_named`), so this single choke point (every
+        # include constructor funnels through `_render_included_file`)
+        # covers all five tag types. Scalars are skipped: CPython interns
+        # small ints/bools/short strings, so `id()` on one could collide
+        # with an unrelated equal value elsewhere in the tree.
+        #
+        # Tagged with `_display_path(target)`, *not* `relative_path` — the
+        # latter is relative to the *including* file's own directory
+        # (matching real HA's `!include` resolution), which can differ
+        # from `target`'s config-dir-relative path (e.g. a root at
+        # `dashboards/home.yaml.j2` including `cards/light.yaml.j2`
+        # resolves to `dashboards/cards/light.yaml.j2`). `raw_texts` in
+        # `template_engine._render_and_parse` keys every file by that same
+        # config-dir-relative path, so `origin_by_id`'s values must match
+        # it exactly for `websocket.py`'s `origins` map to ever correlate
+        # with a `raw_texts` entry.
+        loader.debug_trace.setdefault("origin_by_id", {})[id(value)] = _display_path(
+            loader.hass, target
+        )
+
+    return value
 
 
 def _resolve_dir(

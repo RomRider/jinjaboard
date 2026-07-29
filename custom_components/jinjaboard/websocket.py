@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import voluptuous as vol
@@ -24,6 +25,35 @@ from .template_engine import (
 _RAW_OUTPUT_PREVIEW_CHARS = 500
 
 
+def _walk_origins(
+    node: Any, dot_path: str, origin_by_id: dict[int, str], out: dict[str, str]
+) -> None:
+    """Flatten `debug_trace["origin_by_id"]` (a Python-object-identity map
+    built while parsing, in `includes.py::_render_included_file`) into a
+    dot-path -> origin-file map over the *final* parsed `result` — this can
+    only happen here, after `render_template` returns but before the result
+    is JSON-serialized for `send_result`, since object identity doesn't
+    survive serialization. Recurses into every node regardless of whether
+    it matched, so a deeper nested include produces its own, more specific
+    entry alongside its ancestor's — `strategy-common.ts`'s `resolveOrigin`
+    picks the most specific one for a given output path."""
+    if id(node) in origin_by_id:
+        out[dot_path] = origin_by_id[id(node)]
+    if isinstance(node, dict):
+        for key, value in node.items():
+            _walk_origins(
+                value, f"{dot_path}.{key}" if dot_path else str(key), origin_by_id, out
+            )
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            _walk_origins(
+                value,
+                f"{dot_path}.{index}" if dot_path else str(index),
+                origin_by_id,
+                out,
+            )
+
+
 @callback
 def async_setup_websocket_api(hass: HomeAssistant) -> None:
     """Register the jinjaboard/render WebSocket command."""
@@ -36,6 +66,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
         vol.Required("template"): str,
         vol.Optional("globals"): vol.Any(dict, str),
         vol.Optional("macros"): [str],
+        vol.Optional("debug"): vol.Any(bool, str, [str]),
         vol.Optional("client"): {
             vol.Optional("user_agent"): str,
             vol.Optional("viewport"): {
@@ -71,6 +102,19 @@ async def handle_render(
         "is_admin": connection.user.is_admin,
         "is_owner": connection.user.is_owner,
     }
+    # `debug:` (a `debug` panel viewable from the browser console) is
+    # backend-enforced to admins only — `connection.user.is_admin` is the
+    # same field already used above for `jjb.user.is_admin`, checked
+    # directly here rather than threaded through template rendering, since
+    # this is a WS-handler authorization gate, not a template variable. A
+    # non-admin's truthy `debug` is treated as if it were never sent: no
+    # raw-text/timing/include collection happens at all (not just omitted
+    # from the response), and the response comes back in the ordinary bare
+    # shape — the frontend never assumes the wrapped shape just because it
+    # asked for one.
+    debug_requested = bool(msg.get("debug")) and connection.user.is_admin
+    debug_trace: dict[str, Any] | None = {} if debug_requested else None
+    render_started = time.monotonic() if debug_requested else None
 
     try:
         path = resolve_config_path(hass, relative_path)
@@ -114,6 +158,7 @@ async def handle_render(
             macro_paths,
             user_vars,
             client_vars,
+            debug_trace,
         )
     except JinjaboardPathError as err:
         # Raised here (rather than only by the resolve_config_path call
@@ -170,4 +215,22 @@ async def handle_render(
         )
         return
 
-    connection.send_result(msg["id"], result)
+    if debug_requested:
+        duration_ms = round((time.monotonic() - render_started) * 1000, 1)
+        origins: dict[str, str] = {}
+        _walk_origins(result, "", debug_trace.get("origin_by_id", {}), origins)
+        connection.send_result(
+            msg["id"],
+            {
+                "config": result,
+                "debug": {
+                    "duration_ms": duration_ms,
+                    "root_path": debug_trace.get("root_path", ""),
+                    "raw_texts": debug_trace.get("raw_texts", {}),
+                    "include_vars": debug_trace.get("include_vars", {}),
+                    "origins": origins,
+                },
+            },
+        )
+    else:
+        connection.send_result(msg["id"], result)
