@@ -43,3 +43,14 @@ def resolve_config_path(
         ) from None
 
     return candidate
+
+
+def config_relative_display_path(hass: HomeAssistant, path: Path) -> str:
+    """Render `path` relative to `config_dir` for display in error/debug
+    output, falling back to the absolute path if that fails (it shouldn't,
+    since every path reaching here was already confined by
+    `resolve_config_path`)."""
+    try:
+        return str(path.relative_to(Path(hass.config.config_dir).resolve()))
+    except ValueError:
+        return str(path)

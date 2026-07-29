@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -28,6 +27,10 @@ from .path_guard import JinjaboardPathError, resolve_config_path
 # existing allowlist entry to remove (by index into the stored list), not a
 # filesystem path itself.
 CONF_ENTRY_INDEX = "entry_index"
+
+
+def _format_entry_label(entry: dict[str, Any]) -> str:
+    return entry[CONF_PATH] + (" (folder)" if entry[CONF_IS_DIR] else "")
 
 
 class JinjaboardConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -162,10 +165,7 @@ class JinjaboardOptionsFlowHandler(OptionsFlow):
             )
 
         options = [
-            SelectOptionDict(
-                value=str(i),
-                label=f"{entry[CONF_PATH]}" + (" (folder)" if entry[CONF_IS_DIR] else ""),
-            )
+            SelectOptionDict(value=str(i), label=_format_entry_label(entry))
             for i, entry in enumerate(entries)
         ]
         return self.async_show_form(
@@ -189,10 +189,9 @@ class JinjaboardOptionsFlowHandler(OptionsFlow):
             # No-op: viewing doesn't mutate the entry, just closes the flow.
             return self.async_create_entry(data=self.config_entry.options)
 
-        listing = "\n".join(
-            f"- {entry[CONF_PATH]}" + (" (folder)" if entry[CONF_IS_DIR] else "")
-            for entry in entries
-        ) or "_No files authorized yet._"
+        listing = "\n".join(f"- {_format_entry_label(entry)}" for entry in entries) or (
+            "_No files authorized yet._"
+        )
 
         return self.async_show_form(
             step_id="view_entries",

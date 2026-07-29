@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.14"
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-      - run: make install-backend test-backend PYTHON=python
+      - run: make install-backend install-dev lint-backend test-backend PYTHON=python
 
   vitest:
     runs-on: ubuntu-latest
@@ -24,4 +24,4 @@ jobs:
           node-version: "22"
       - working-directory: src
         run: npm ci
-      - run: make typecheck test-frontend
+      - run: make typecheck lint-frontend test-frontend

@@ -28,20 +28,20 @@ from __future__ import annotations
 
 import fnmatch
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
-
 from homeassistant.core import HomeAssistant
 
 from .errors import (
-    JinjaboardIncludeNotFoundError,
     JinjaboardIncludeError,
+    JinjaboardIncludeNotFoundError,
     JinjaboardTemplateError,
     JinjaboardYamlError,
 )
-from .path_guard import resolve_config_path
+from .path_guard import config_relative_display_path, resolve_config_path
 
 # Coarse backstop against runaway/cyclic includes. Not a resource-limit story
 # (there's no render-timeout guard yet either — see template_engine.py) —
@@ -82,20 +82,6 @@ RenderAndParse = Callable[
 
 def _is_visible(name: str) -> bool:
     return not name.startswith(".")
-
-
-def _display_path(hass: HomeAssistant, path: Path) -> str:
-    """Config-dir-relative display path for `debug:` output — mirrors
-    `template_engine._debug_display_path` exactly (duplicated, not
-    imported, to avoid a circular import between the two modules: this
-    module is already imported by `template_engine.py`). Must compute the
-    identical key `_render_and_parse` uses for `raw_texts`, since
-    `_render_included_file` below tags `origin_by_id` with this same value
-    — a mismatch would silently break every `origins` lookup."""
-    try:
-        return str(path.relative_to(Path(hass.config.config_dir).resolve()))
-    except ValueError:
-        return str(path)
 
 
 def find_template_files(directory: Path) -> list[Path]:
@@ -209,7 +195,11 @@ def parse_with_includes(
             debug_trace=debug_trace,
         )
 
-    return yaml.load(text, Loader=_make_loader)
+    # PyYAML's own runtime accepts any callable(stream) -> Loader here (it
+    # just calls `Loader(stream)`); typeshed's stub is narrower, requiring an
+    # actual Loader subclass, so it can't express this factory-closure
+    # pattern used to thread per-call context into the loader.
+    return yaml.load(text, Loader=_make_loader)  # type: ignore[arg-type]
 
 
 def _parse_include_args(
@@ -229,11 +219,11 @@ def _parse_include_args(
         return path, None
     if isinstance(node, yaml.MappingNode):
         mapping = loader.construct_mapping(node, deep=True)
-        path = mapping.get("path")
-        if not path:
+        raw_path = mapping.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
             raise JinjaboardTemplateError(
                 f"{node.tag} mapping form requires a non-empty 'path' key "
-                f"(got keys {sorted(mapping)!r})",
+                f"(got keys {sorted(str(key) for key in mapping)!r})",
                 line=node.start_mark.line + 1,
             )
         extra_vars = mapping.get("vars")
@@ -242,7 +232,7 @@ def _parse_include_args(
                 f"{node.tag}'s 'vars' key must be a mapping, got {type(extra_vars).__name__}",
                 line=node.start_mark.line + 1,
             )
-        return path, extra_vars
+        return raw_path, extra_vars
     raise JinjaboardTemplateError(
         f"{node.tag} needs a scalar path or a {{path, vars}} mapping",
         line=node.start_mark.line + 1,
@@ -319,7 +309,8 @@ def _render_included_file(
         # small ints/bools/short strings, so `id()` on one could collide
         # with an unrelated equal value elsewhere in the tree.
         #
-        # Tagged with `_display_path(target)`, *not* `relative_path` — the
+        # Tagged with `config_relative_display_path(target)`, *not*
+        # `relative_path` — the
         # latter is relative to the *including* file's own directory
         # (matching real HA's `!include` resolution), which can differ
         # from `target`'s config-dir-relative path (e.g. a root at
@@ -329,8 +320,8 @@ def _render_included_file(
         # config-dir-relative path, so `origin_by_id`'s values must match
         # it exactly for `websocket.py`'s `origins` map to ever correlate
         # with a `raw_texts` entry.
-        loader.debug_trace.setdefault("origin_by_id", {})[id(value)] = _display_path(
-            loader.hass, target
+        loader.debug_trace.setdefault("origin_by_id", {})[id(value)] = (
+            config_relative_display_path(loader.hass, target)
         )
 
     return value
@@ -347,7 +338,10 @@ def _resolve_dir(
 
 
 def _include_dir_files(
-    loader: _JinjaboardYamlLoader, node: yaml.Node, target_dir: Path, extra_vars: dict[str, Any] | None
+    loader: _JinjaboardYamlLoader,
+    node: yaml.Node,
+    target_dir: Path,
+    extra_vars: dict[str, Any] | None,
 ) -> list[Any]:
     """Render+parse every matched file under `target_dir`, in walk order."""
     return [

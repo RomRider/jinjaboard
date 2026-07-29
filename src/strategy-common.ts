@@ -120,6 +120,10 @@ function wrapLine(line: string, width: number): string {
 
 export function errorCard(error: JinjaboardWsError) {
   const presentation = (error.code && ERROR_PRESENTATIONS[error.code]) || DEFAULT_PRESENTATION;
+  // `message` is typed as required, but `error` is only ever `as`-cast into
+  // this shape from a caught WS rejection (see createStrategyGenerate) —
+  // the fallback guards against that cast being wrong at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string
   const message = error.message ?? String(error);
 
   const sections = [
@@ -216,7 +220,6 @@ function resolveOrigin(path: string, origins: Record<string, string>, rootPath: 
 }
 
 function logRawText(path: string, text: string, rootPath: string, vars: Record<string, unknown> | undefined): void {
-  // eslint-disable-next-line no-console
   console.groupCollapsed(path === rootPath ? "Raw template output (root)" : `Raw template output: ${path}`);
   console.log(text);
   // Root is never included in `include_vars` (it never has `inc_vars`),
@@ -268,7 +271,6 @@ function logDebugToConsole(
     ? selectDebugSubtree(fullConfig, pathSelectors.length === 1 ? pathSelectors[0] : pathSelectors)
     : fullConfig;
 
-  // eslint-disable-next-line no-console
   console.groupCollapsed(`Jinjaboard: ${template} (${info.duration_ms}ms)`);
   console.log(resultLabel, resultValue);
 
@@ -320,10 +322,22 @@ export function createStrategyGenerate(buildErrorResult: (error: JinjaboardWsErr
       return result;
     } catch (err) {
       if (debugOption) {
-        // eslint-disable-next-line no-console
         console.error(`Jinjaboard: render failed for ${template}`, err);
       }
       return buildErrorResult(err as JinjaboardWsError);
     }
   };
+}
+
+/**
+ * Defines a strategy custom element whose error result is always a bare
+ * `{cards: [...]}` — shared by the view and section strategies, which
+ * otherwise only differ in their registered tag name. The dashboard
+ * strategy doesn't use this: its error result is dashboard-shaped.
+ */
+export function defineSimpleStrategy(tagName: string): void {
+  class SimpleStrategy extends HTMLElement {
+    static generate = createStrategyGenerate((error) => ({ cards: [errorCard(error)] }));
+  }
+  customElements.define(tagName, SimpleStrategy);
 }

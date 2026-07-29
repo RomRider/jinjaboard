@@ -9,3 +9,17 @@ testpaths = ["tests"]
 # quirks, etc.) — the repo root must be importable for `custom_components`
 # to be found.
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.14"
+files = ["custom_components/jinjaboard"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true

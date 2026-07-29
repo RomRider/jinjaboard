@@ -6,7 +6,6 @@ import time
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
@@ -216,6 +215,8 @@ async def handle_render(
         return
 
     if debug_requested:
+        assert debug_trace is not None
+        assert render_started is not None
         duration_ms = round((time.monotonic() - render_started) * 1000, 1)
         origins: dict[str, str] = {}
         _walk_origins(result, "", debug_trace.get("origin_by_id", {}), origins)

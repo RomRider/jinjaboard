@@ -1,21 +1,26 @@
 PYTHON ?= /home/vscode/.local/ha-venv/bin/python
 HASS ?= /home/vscode/.local/ha-venv/bin/hass
 
-.PHONY: help install install-backend install-frontend \
-        test test-backend test-frontend typecheck build run clean ci
+.PHONY: help install install-backend install-frontend install-dev \
+        test test-backend test-frontend typecheck lint lint-backend \
+        lint-frontend build run clean ci
 
 help:
 	@echo "install           - install backend + frontend dependencies"
 	@echo "install-backend   - pip-install requirements-test.txt into \$$PYTHON"
 	@echo "install-frontend  - npm install in src/"
+	@echo "install-dev       - pip-install requirements-dev.txt into \$$PYTHON"
 	@echo "test              - run backend + frontend test suites"
 	@echo "test-backend      - pytest"
 	@echo "test-frontend     - vitest"
 	@echo "typecheck         - tsc --noEmit"
+	@echo "lint              - lint-backend + lint-frontend"
+	@echo "lint-backend      - ruff check + mypy"
+	@echo "lint-frontend     - eslint"
 	@echo "build             - bundle src/ into custom_components/jinjaboard/www/"
 	@echo "run               - start a real HA instance against /config (devcontainer only)"
 	@echo "clean             - remove build artifacts and caches"
-	@echo "ci                - everything CI runs: typecheck, test-backend, test-frontend"
+	@echo "ci                - everything CI runs: typecheck, lint, test-backend, test-frontend"
 
 install: install-backend install-frontend
 
@@ -38,6 +43,9 @@ install-backend:
 install-frontend:
 	cd src && npm install
 
+install-dev:
+	uv pip install --system -r requirements-dev.txt -p $(PYTHON)
+
 test: test-backend test-frontend
 
 test-backend:
@@ -48,6 +56,15 @@ test-frontend:
 
 typecheck:
 	cd src && npm run typecheck
+
+lint: lint-backend lint-frontend
+
+lint-backend:
+	$(PYTHON) -m ruff check custom_components/jinjaboard
+	$(PYTHON) -m mypy
+
+lint-frontend:
+	cd src && npm run lint
 
 build:
 	cd src && npm run build
@@ -60,4 +77,4 @@ clean:
 	rm -rf .pytest_cache
 	rm -rf custom_components/jinjaboard/www
 
-ci: typecheck test-backend test-frontend
+ci: typecheck lint test-backend test-frontend
