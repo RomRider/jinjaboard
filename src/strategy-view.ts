@@ -1,5 +1,4 @@
-import { createStrategyGenerate, errorCard } from "./strategy-common";
-import type { JinjaboardWsError } from "./types";
+import { defineSimpleStrategy } from "./strategy-common";
 
 /**
  * `ll-strategy-view-jinjaboard`: generates a single Lovelace view's
@@ -11,12 +10,4 @@ import type { JinjaboardWsError } from "./types";
  * for a `views: [{strategy: {...}, ...}]` entry, merging the returned object
  * over any sibling keys (`title`, `path`, `icon`, ...) already on that view.
  */
-class LlStrategyViewJinjaboard extends HTMLElement {
-  static generate = createStrategyGenerate(errorView);
-}
-
-function errorView(error: JinjaboardWsError) {
-  return { cards: [errorCard(error)] };
-}
-
-customElements.define("ll-strategy-view-jinjaboard", LlStrategyViewJinjaboard);
+defineSimpleStrategy("ll-strategy-view-jinjaboard");

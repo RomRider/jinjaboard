@@ -1,5 +1,4 @@
-import { createStrategyGenerate, errorCard } from "./strategy-common";
-import type { JinjaboardWsError } from "./types";
+import { defineSimpleStrategy } from "./strategy-common";
 
 /**
  * `ll-strategy-section-jinjaboard`: generates a single Lovelace section's
@@ -12,12 +11,4 @@ import type { JinjaboardWsError } from "./types";
  * view), merging the returned object over any sibling keys (`column_span`,
  * `title`, ...) already on that section.
  */
-class LlStrategySectionJinjaboard extends HTMLElement {
-  static generate = createStrategyGenerate(errorSection);
-}
-
-function errorSection(error: JinjaboardWsError) {
-  return { cards: [errorCard(error)] };
-}
-
-customElements.define("ll-strategy-section-jinjaboard", LlStrategySectionJinjaboard);
+defineSimpleStrategy("ll-strategy-section-jinjaboard");

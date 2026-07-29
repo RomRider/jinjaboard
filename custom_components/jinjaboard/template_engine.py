@@ -5,21 +5,21 @@ from __future__ import annotations
 import re
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import jinja2.exceptions
 import yaml
-from jinja2.utils import Namespace
-
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.template import Template
 from homeassistant.util.async_ import run_callback_threadsafe
+from jinja2.utils import Namespace
 
 from .errors import JinjaboardGlobalsError, JinjaboardTemplateError, JinjaboardYamlError
 from .globals_file import resolve_global_vars
 from .includes import parse_with_includes
 from .macros import build_macro_namespace
+from .path_guard import config_relative_display_path
 
 # Re-exported for websocket.py / callers that only need the exception types,
 # so most of the codebase can import them from here rather than .errors.
@@ -370,17 +370,6 @@ def _compile_macro_module_on_loop(
             ) from rewritten
 
 
-def _debug_display_path(hass: HomeAssistant, path: Path) -> str:
-    """Render a touched-include path relative to `config_dir` for
-    readability in debug output, falling back to the absolute path if that
-    fails (it shouldn't, since `path_guard` already confines every path to
-    `config_dir`)."""
-    try:
-        return str(path.relative_to(Path(hass.config.config_dir).resolve()))
-    except ValueError:
-        return str(path)
-
-
 def _render_and_parse(
     hass: HomeAssistant,
     path: Path,
@@ -424,7 +413,7 @@ def _render_and_parse(
     before any nested include is parsed, since that only happens inside
     `parse_with_includes`, called after.
     """
-    display_path = _debug_display_path(hass, path)
+    display_path = config_relative_display_path(hass, path)
     if debug_trace is not None and "root_path" not in debug_trace:
         debug_trace["root_path"] = display_path
 
@@ -559,7 +548,13 @@ def render_template(
     are unaffected (default `None`, nothing collected).
     """
     global_vars = resolve_global_vars(hass, global_vars)
-    global_vars = _render_global_values(hass, global_vars, user_vars, client_vars)
+    # _render_global_values is generically `Any` (it recurses through
+    # arbitrary dict/list/scalar leaves), but for a dict-or-None input it
+    # always returns a same-shaped dict-or-None.
+    global_vars = cast(
+        "dict[str, Any] | None",
+        _render_global_values(hass, global_vars, user_vars, client_vars),
+    )
     macro_vars = build_macro_namespace(
         hass, macro_paths, global_vars, user_vars, client_vars, _compile_macro_module
     )

@@ -24,10 +24,13 @@ from __future__ import annotations
 from typing import Any
 
 import yaml
-
 from homeassistant.core import HomeAssistant
 
-from .errors import JinjaboardGlobalsError, JinjaboardIncludeNotFoundError, JinjaboardNotAuthorizedError
+from .errors import (
+    JinjaboardGlobalsError,
+    JinjaboardIncludeNotFoundError,
+    JinjaboardNotAuthorizedError,
+)
 from .path_guard import resolve_config_path
 from .template_allowlist import is_path_authorized
 

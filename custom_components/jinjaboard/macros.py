@@ -33,8 +33,9 @@ meaningful, tree-position-specific `inc` value to give it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jinja2.runtime
 from homeassistant.core import HomeAssistant

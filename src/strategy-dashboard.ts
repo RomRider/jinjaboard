@@ -13,8 +13,7 @@ class LlStrategyDashboardJinjaboard extends HTMLElement {
   static generate = createStrategyGenerate(errorDashboard);
 }
 
-// Full error-code-aware rendering lands in error-panel.ts (M6); this is a
-// minimal fallback so a bad template never produces a blank dashboard.
+// Minimal fallback so a bad template never produces a blank dashboard.
 function errorDashboard(error: JinjaboardWsError) {
   return {
     views: [
