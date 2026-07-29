@@ -477,6 +477,32 @@ If a selected path's content lives directly in the root template rather
 than an `!include`d file, the root's raw output is shown instead — there's
 always a fallback, never an empty result.
 
+**Debugging a specific included file directly.** Finding a dot-path just
+to look at one `!include`d file's raw output is often more work than
+necessary — `debug` also accepts one of the exact file-path labels already
+shown as `Raw template output: <path>` in a `debug: true` run (or a list of
+several, to inspect more than one at once), letting you jump straight to
+that file's raw output (and its `Vars:`, if it has any) by name, without
+ever looking at the parsed result's structure:
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: dashboards/home.yaml.j2
+  debug:
+    - "cards_dir/kitchen.yaml.j2"
+    - "cards_dir/living.yaml.j2"
+```
+
+In this mode the parsed `Result` is shown **in full, unfiltered** — a file
+selector doesn't narrow it, since a file's content doesn't always
+correspond to one single subtree of the output (it might appear more than
+once, or not be separately identifiable at all past an
+`!include_dir_merge_*` boundary). A `debug` list can freely mix file
+selectors with dot-path selectors; `Result` narrows using only whichever
+dot-paths are present, while raw output is shown for every file either
+kind of entry resolves to.
+
 If an `!include`d file's raw output group is shown and that include used
 `vars:` (`!include {path: ..., vars: {...}}`), a `Vars:` entry is logged
 right alongside its raw text — the *effective* vars, i.e. exactly what

@@ -457,6 +457,25 @@ prefixes from longest to shortest against `origins`, falling back to
 `root_path` if nothing matches) needs an `origins` value that's a real key
 into `raw_texts`.
 
+**Debugging a specific file directly, without a dot-path.** `debug`'s
+string/list entries are classified purely client-side, in `src/strategy-
+common.ts`'s `splitDebugOption`: an entry that's an *exact key* in the
+response's own `raw_texts` is a "file selector" (shown directly, no path
+resolution), anything else is a "path selector" (resolved via
+`resolveOrigin` like before). This needed **no backend or wire-format
+change at all** — the backend has never interpreted `debug`'s string
+content, only its truthiness (`bool(msg.get("debug"))`), so every field a
+file selector needs (`raw_texts`, `include_vars`) was already being sent.
+A `debug` value made entirely of file selectors leaves the parsed `Result`
+unfiltered (same as `debug: true`'s), rather than attempting to narrow it
+to some subtree — a file's content isn't guaranteed to correspond to
+exactly one subtree of the result (it might appear more than once, or lose
+separate identity past an `!include_dir_merge_*` boundary, per the
+`origins` limitations above), so there's nothing more specific to show
+that's guaranteed correct. `Result` only narrows using whichever path
+selectors are present in a (possibly mixed) `debug` list; raw output is
+shown for the union of both kinds.
+
 ### Template allowlist (`template_allowlist.py`)
 
 `path_guard.py` (above) is a traversal *guard* — it confines paths to

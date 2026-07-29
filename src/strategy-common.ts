@@ -226,28 +226,65 @@ function logRawText(path: string, text: string, rootPath: string, vars: Record<s
   console.groupEnd();
 }
 
+/**
+ * Partitions a non-`true`/`undefined` `debug` value into **file
+ * selectors** — entries that exactly match a key in `rawTexts`, i.e. a
+ * touched file's own display path, the same string already shown as the
+ * label on its `Raw template output: <path>` console group — and **path
+ * selectors**, everything else, resolved as a dot-path into the parsed
+ * result like before. Lets an author debug a specific `!include` directly
+ * by name (e.g. copy-pasted from a prior `debug: true` run) without first
+ * having to find its dot-path in the output.
+ */
+function splitDebugOption(
+  entries: string[],
+  rawTexts: Record<string, string>,
+): { pathSelectors: string[]; fileSelectors: string[] } {
+  return {
+    fileSelectors: entries.filter((entry) => entry in rawTexts),
+    pathSelectors: entries.filter((entry) => !(entry in rawTexts)),
+  };
+}
+
 function logDebugToConsole(
   template: string,
   info: JinjaboardDebugInfo,
   outputPath: boolean | string | string[] | undefined,
   fullConfig: unknown,
 ): void {
-  const resultLabel =
-    outputPath === true || outputPath === undefined ? "Result" : `Result (${[outputPath].flat().join(", ")})`;
+  const isFullDump = outputPath === true || outputPath === undefined;
+  const debugEntries: string[] =
+    typeof outputPath === "string" ? [outputPath] : Array.isArray(outputPath) ? outputPath : [];
+  const { pathSelectors, fileSelectors } = splitDebugOption(debugEntries, info.raw_texts);
+
+  // A debug value made entirely of file selectors doesn't correspond to
+  // one unambiguous subtree of the parsed result (a file's content might
+  // appear more than once, or be unidentifiable at all past an
+  // !include_dir_merge_* boundary) — Result is shown in full, same as
+  // `debug: true`, whenever there's no path selector to narrow it by.
+  const narrowResult = pathSelectors.length > 0;
+  const resultLabel = narrowResult ? `Result (${pathSelectors.join(", ")})` : "Result";
+  const resultValue = narrowResult
+    ? selectDebugSubtree(fullConfig, pathSelectors.length === 1 ? pathSelectors[0] : pathSelectors)
+    : fullConfig;
+
   // eslint-disable-next-line no-console
   console.groupCollapsed(`Jinjaboard: ${template} (${info.duration_ms}ms)`);
-  console.log(resultLabel, selectDebugSubtree(fullConfig, outputPath));
+  console.log(resultLabel, resultValue);
 
-  // No path filter: show every touched file, since there's no specific
-  // subtree to narrow to. A path filter resolves each requested path to
-  // its origin file and shows only those, deduped — e.g. two cards from
-  // the same include only log that file once.
-  const requestedPaths: string[] =
-    typeof outputPath === "string" ? [outputPath] : Array.isArray(outputPath) ? outputPath : [];
-  const filePaths =
-    outputPath === true || outputPath === undefined
-      ? Object.keys(info.raw_texts)
-      : Array.from(new Set(requestedPaths.map((path) => resolveOrigin(path, info.origins, info.root_path))));
+  // No filter at all: show every touched file, since there's no specific
+  // subtree to narrow to. Otherwise show the union of explicit file
+  // selectors and origin-resolved files from any path selectors, deduped
+  // — e.g. two cards from the same include, or a file selector and a path
+  // selector pointing at the same file, only log that file once.
+  const filePaths = isFullDump
+    ? Object.keys(info.raw_texts)
+    : Array.from(
+        new Set([
+          ...fileSelectors,
+          ...pathSelectors.map((path) => resolveOrigin(path, info.origins, info.root_path)),
+        ]),
+      );
   for (const path of filePaths) {
     if (path in info.raw_texts) logRawText(path, info.raw_texts[path], info.root_path, info.include_vars[path]);
   }
