@@ -6,16 +6,19 @@ one used by automations (`states()`, `areas()`, `devices()`, `labels()`, and
 everything else) — and displayed through a custom Lovelace dashboard
 strategy.
 
-It's a spiritual successor to
-[`hass-lovelace_gen`](https://github.com/thomasloven/hass-lovelace_gen), with
-two differences:
+It's similar in spirit to
+[`hass-lovelace_gen`](https://github.com/thomasloven/hass-lovelace_gen), but
+differs in these key ways:
 
-- **Live, not pre-generated.** Your dashboard re-renders whenever you open or
-  refresh it, instead of needing a script/service call to regenerate a static
-  file.
-- **Real Home Assistant templating.** JinjaBoard uses Home Assistant's actual
+- **Home Assistant's template engine.** JinjaBoard renders templates through
+  Home Assistant's own
   [template engine](https://www.home-assistant.io/docs/templating/), so
   anything you can do in an automation template works here too.
+- **Template-driven dashboard generation.** Your dashboard is rendered from
+  YAML + Jinja templates through Home Assistant, so you can build dynamic
+  dashboards from your existing entities, areas, devices, and labels.
+- **Dashboard, view, and section strategies.** JinjaBoard supports Lovelace
+  dashboard, view, and section strategies.
 
 A dashboard is just a loop over whatever Home Assistant already knows about
 your house, so it stops needing maintenance every time you add a device.
@@ -28,26 +31,6 @@ A few things people build with it (full versions in
   entity in one place.
 - A curated view driven by entity labels, re-organized from Home Assistant's
   UI instead of hand-edited YAML.
-
-## Status
-
-This is under active development. Implemented so far:
-
-- ✅ Dashboards, views, and sections authored as plain YAML with embedded
-  Jinja (`{{ }}` / `{% %}`)
-- ✅ Lovelace dashboard, view, and section strategies
-- ✅ Path-traversal protection, with clear error messages instead of a blank
-  dashboard
-- ✅ Splitting a dashboard across multiple files with `!include` and friends,
-  mirroring [Home Assistant's own config-splitting
-  tags](https://www.home-assistant.io/docs/configuration/splitting_configuration/)
-
-Not yet implemented:
-
-- ⛔ A polished in-dashboard error panel (errors currently render as a plain
-  markdown card)
-- ⛔ Automatic re-render on entity state change — for now, a dashboard only
-  re-renders when you open or refresh the page (see [Usage](#2-create-a-dashboard-that-uses-it))
 
 ## Installation
 
@@ -82,13 +65,10 @@ Using an unauthorized file as a `template:`, `globals:`, or `macros:` entry
 shows a `template_not_authorized` error card instead of rendering (see
 [Error handling](#error-handling)).
 
-This only gates those three dashboard-author-controlled entry points. Files
-they reach via `!include`/`!include_dir_*` are **not** separately checked
-against this list — once a template is authorized, its own includes work as
-normal, confined to the config directory the same way they always have been
-(see `path_traversal` below).
-
-
+This only applies to those three dashboard-author-controlled entry points.
+Files they reach through `!include`/`!include_dir_*` are **not** checked
+separately against this list — once a template is authorized, its includes
+continue to work normally and remain confined to the config directory.
 
 ### 1. Write a template
 
@@ -151,7 +131,7 @@ strategy:
   with Home Assistant's own built-in template variables (`states`, `now`,
   `area_id`, ...).
 
-  A global's *value* can itself contain Jinja (`{{ }}` / `{% %}`) — e.g.
+  A global's _value_ can itself contain Jinja (`{{ }}` / `{% %}`) — e.g.
   `some_var: "{{ 1 + 2 }}"` — which is rendered before it's exposed as
   `jjb.globals.some_var`. Inside that Jinja you get `jjb.user`/`jjb.client`
   (see below) and Home Assistant's own built-in template functions
@@ -173,9 +153,9 @@ strategy:
     globals: jinjaboard/globals.yaml
   ```
 
-  The globals file's own *structure* is plain YAML — parsed as-is, never
+  The globals file's own _structure_ is plain YAML — parsed as-is, never
   run through Jinja as a whole, so it can't use `!include`/`!include_dir_*`
-  and its top level must be a mapping. Its *values*, however, are
+  and its top level must be a mapping. Its _values_, however, are
   Jinja-rendered exactly like inline `globals:` values are (see above).
   Like `template` and `macros:`, a globals file path is checked against
   JinjaBoard's [authorized files list](#authorizing-template-files) before
@@ -368,8 +348,8 @@ strategy:
   type: custom:jinjaboard
   template: jinjaboard/home.yaml
   macros:
-    - jinjaboard/macros/common.yaml   # a single file
-    - jinjaboard/macros/kitchen/         # or a whole directory
+    - jinjaboard/macros/common.yaml # a single file
+    - jinjaboard/macros/kitchen/ # or a whole directory
 ```
 
 Every macro from every declared file is callable directly as
@@ -392,8 +372,7 @@ can call it:
 ```yaml
 views:
   - title: Home
-    cards:
-      {{ jjb.macros.light_tile('light.kitchen') }}
+    cards: { { jjb.macros.light_tile('light.kitchen') } }
 ```
 
 A few things worth knowing:
@@ -411,7 +390,7 @@ A few things worth knowing:
 - Each declared `macros:` entry must be on the [authorized files
   list](#authorizing-template-files), same as `template:` — an unauthorized
   entry shows `template_not_authorized`. Files discovered inside an
-  authorized *directory* entry aren't separately checked.
+  authorized _directory_ entry aren't separately checked.
 
 ### Who's viewing: `jjb.user` and `jjb.client`
 
@@ -577,16 +556,16 @@ If a template fails to render or produces invalid YAML, the affected
 dashboard, view, or section shows a markdown card with the error instead of
 a blank screen. Error codes:
 
-| Code                | Meaning                                                                                                                     |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `path_missing`      | The root template file doesn't exist or can't be read                                                                       |
-| `path_traversal`    | A template or include path resolves outside the Home Assistant config directory                                             |
+| Code                      | Meaning                                                                                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path_missing`            | The root template file doesn't exist or can't be read                                                                                                                            |
+| `path_traversal`          | A template or include path resolves outside the Home Assistant config directory                                                                                                  |
 | `template_not_authorized` | The `template:` path, a `globals:` file path, or a `macros:` entry isn't on JinjaBoard's admin-managed allowlist — see [Authorizing template files](#authorizing-template-files) |
-| `include_not_found` | An `!include`d file, `macros:` entry, or `globals:` file doesn't exist                                                       |
-| `template_error`    | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include problem was detected                   |
-| `yaml_parse_error`  | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block |
-| `globals_error`     | A `globals:` file was found and authorized, but isn't valid YAML, or its top level isn't a mapping                          |
-| `render_timeout`    | (planned) rendering took too long                                                                                           |
+| `include_not_found`       | An `!include`d file, `macros:` entry, or `globals:` file doesn't exist                                                                                                           |
+| `template_error`          | Jinja itself failed (syntax error, undefined variable/function, etc.), or an include problem was detected                                                                        |
+| `yaml_parse_error`        | The template rendered, but the result isn't valid YAML — usually an indentation issue around a `{% for %}`/`{% if %}` block                                                      |
+| `globals_error`           | A `globals:` file was found and authorized, but isn't valid YAML, or its top level isn't a mapping                                                                               |
+| `render_timeout`          | (planned) rendering took too long                                                                                                                                                |
 
 ## Development
 
