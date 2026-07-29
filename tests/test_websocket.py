@@ -335,6 +335,95 @@ async def test_render_yaml_parse_error_includes_raw_preview(
     assert "\\n" not in message
 
 
+async def test_render_debug_true_wraps_result_with_trace(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("included.yaml.j2", "value: from_include\n")
+    write_template("root.yaml.j2", "cards: !include included.yaml.j2\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"]["config"] == {"cards": {"value": "from_include"}}
+    debug = response["result"]["debug"]
+    assert isinstance(debug["duration_ms"], (int, float))
+    assert debug["duration_ms"] >= 0
+    # The root's raw text is pre-YAML-parse — the `!include` tag itself is
+    # still literally present, not yet resolved to the included file's
+    # contents.
+    assert "!include included.yaml.j2" in debug["raw_root_text"]
+    assert debug["include_paths"] == ["included.yaml.j2"]
+
+
+async def test_render_debug_string_path_ignored_by_backend(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    """The output-path filter (a string/list `debug` value) is applied
+    client-side only — the backend only cares whether `debug` is truthy at
+    all, and always returns the full, unfiltered config alongside the same
+    debug trace."""
+    write_template("root.yaml.j2", "views:\n  - title: one\n  - title: two\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": "views.0"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"]["config"] == {
+        "views": [{"title": "one"}, {"title": "two"}]
+    }
+    assert "debug" in response["result"]
+
+
+async def test_render_debug_absent_returns_bare_result_unchanged(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("included.yaml.j2", "value: from_include\n")
+    write_template("root.yaml.j2", "cards: !include included.yaml.j2\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2"}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"cards": {"value": "from_include"}}
+    assert "config" not in response["result"]
+    assert "debug" not in response["result"]
+
+
+async def test_render_debug_true_by_non_admin_returns_bare_result(
+    hass: HomeAssistant,
+    config_entry,
+    hass_ws_client,
+    hass_read_only_access_token,
+    write_template,
+) -> None:
+    write_template("root.yaml.j2", "ok: true\n")
+    client = await hass_ws_client(hass, access_token=hass_read_only_access_token)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"] == {"ok": True}
+    assert "debug" not in response["result"]
+
+
+async def test_render_rejects_malformed_debug_payload(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("root.yaml.j2", "ok: true\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": 123}
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "invalid_format"
+
+
 async def _setup_narrow_entry(hass: HomeAssistant, entries: list[dict]) -> MockConfigEntry:
     """A JinjaBoard config entry with a specific allowlist, not the permissive
     `config_entry` fixture — used by the tests below that exercise the

@@ -370,6 +370,17 @@ def _compile_macro_module_on_loop(
             ) from rewritten
 
 
+def _debug_display_path(hass: HomeAssistant, path: Path) -> str:
+    """Render a touched-include path relative to `config_dir` for
+    readability in debug output, falling back to the absolute path if that
+    fails (it shouldn't, since `path_guard` already confines every path to
+    `config_dir`)."""
+    try:
+        return str(path.relative_to(Path(hass.config.config_dir).resolve()))
+    except ValueError:
+        return str(path)
+
+
 def _render_and_parse(
     hass: HomeAssistant,
     path: Path,
@@ -380,6 +391,7 @@ def _render_and_parse(
     user_vars: dict[str, Any] | None,
     client_vars: dict[str, Any] | None,
     include_stack: list[Path],
+    debug_trace: dict[str, Any] | None = None,
 ) -> Any:
     """Render `source` (already read from `path`) and parse it as YAML.
 
@@ -395,10 +407,28 @@ def _render_and_parse(
     `macros.py`), `user_vars` (`jjb.user`), and `client_vars` (`jjb.client`)
     are likewise constant for the whole tree, built once by `render_template`
     before any include is walked.
+
+    `debug_trace`, when not `None`, is mutated in place to collect data for
+    the `debug:` WS response envelope (see `websocket.py::handle_render`):
+    `"raw_root_text"` (the root file's post-Jinja/pre-YAML text) and
+    `"include_paths"` (every `!include`/`!include_dir_*` file touched,
+    root excluded, in traversal order). Whether *this* call is the root or
+    a nested include is told apart by whether `"raw_root_text"` is already
+    present at entry — the root's own call always sets it (right below)
+    before any nested include is parsed, since that only happens inside
+    `parse_with_includes`, called after.
     """
+    if debug_trace is not None and "raw_root_text" in debug_trace:
+        debug_trace.setdefault("include_paths", []).append(
+            _debug_display_path(hass, path)
+        )
+
     raw = _render_jinja(
         hass, source, global_vars, inc_vars, macro_vars, user_vars, client_vars
     )
+    if debug_trace is not None:
+        debug_trace.setdefault("raw_root_text", raw)
+
     try:
         return parse_with_includes(
             hass,
@@ -411,6 +441,7 @@ def _render_and_parse(
             client_vars,
             include_stack,
             _render_and_parse,
+            debug_trace,
         )
     except yaml.YAMLError as err:
         raise JinjaboardYamlError(raw) from err
@@ -478,6 +509,7 @@ def render_template(
     macro_paths: list[str] | None = None,
     user_vars: dict[str, Any] | None = None,
     client_vars: dict[str, Any] | None = None,
+    debug_trace: dict[str, Any] | None = None,
 ) -> Any:
     """Render `source` (the file at `path`) as YAML with embedded Jinja.
 
@@ -513,6 +545,11 @@ def render_template(
     `websocket.py` from the authenticated WebSocket connection) and
     `client_vars` (`jjb.client`, frontend-supplied and unverifiable) are
     likewise constant for the whole tree.
+
+    `debug_trace`, when not `None`, is mutated to carry `"raw_root_text"`
+    and `"include_paths"` for the `debug:` WS response envelope — see
+    `_render_and_parse`'s docstring. Existing callers that don't pass it
+    are unaffected (default `None`, nothing collected).
     """
     global_vars = resolve_global_vars(hass, global_vars)
     global_vars = _render_global_values(hass, global_vars, user_vars, client_vars)
@@ -529,4 +566,5 @@ def render_template(
         user_vars,
         client_vars,
         include_stack=[path.resolve()],
+        debug_trace=debug_trace,
     )

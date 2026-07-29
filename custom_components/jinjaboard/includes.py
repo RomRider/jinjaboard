@@ -60,8 +60,8 @@ _DIR_INCLUDE_PATTERNS = ("*.yaml", "*.yml", "*.yaml.j2", "*.yml.j2")
 _TEMPLATE_EXTENSIONS = (".yaml.j2", ".yml.j2", ".yaml", ".yml", ".j2")
 
 # (hass, path, source, global_vars, inc_vars, macro_vars, user_vars,
-# client_vars, include_stack) -> parsed result. Injected rather than
-# imported from template_engine.py to avoid a circular import:
+# client_vars, include_stack, debug_trace) -> parsed result. Injected
+# rather than imported from template_engine.py to avoid a circular import:
 # template_engine.py imports parse_with_includes() from this module.
 RenderAndParse = Callable[
     [
@@ -74,6 +74,7 @@ RenderAndParse = Callable[
         "dict[str, Any] | None",
         "dict[str, Any] | None",
         "list[Path]",
+        "dict[str, Any] | None",
     ],
     Any,
 ]
@@ -139,6 +140,7 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         client_vars: dict[str, Any] | None,
         include_stack: list[Path],
         render_and_parse: RenderAndParse,
+        debug_trace: dict[str, Any] | None,
     ) -> None:
         super().__init__(stream)
         self.hass = hass
@@ -150,6 +152,7 @@ class _JinjaboardYamlLoader(yaml.SafeLoader):
         self.client_vars = client_vars
         self.include_stack = include_stack
         self.render_and_parse = render_and_parse
+        self.debug_trace = debug_trace
 
 
 def parse_with_includes(
@@ -163,6 +166,7 @@ def parse_with_includes(
     client_vars: dict[str, Any] | None,
     include_stack: list[Path],
     render_and_parse: RenderAndParse,
+    debug_trace: dict[str, Any] | None,
 ) -> Any:
     """Parse `text` (already Jinja-rendered), resolving include tags.
 
@@ -188,6 +192,7 @@ def parse_with_includes(
             client_vars=client_vars,
             include_stack=include_stack,
             render_and_parse=render_and_parse,
+            debug_trace=debug_trace,
         )
 
     return yaml.load(text, Loader=_make_loader)
@@ -281,6 +286,7 @@ def _render_included_file(
             loader.user_vars,
             loader.client_vars,
             [*loader.include_stack, target],
+            loader.debug_trace,
         )
     except (JinjaboardTemplateError, JinjaboardYamlError, JinjaboardIncludeError) as err:
         err.args = (

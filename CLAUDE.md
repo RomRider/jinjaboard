@@ -364,6 +364,45 @@ WS errors use a fixed set of codes (`path_missing`, `path_traversal`,
 message instead of a blank dashboard. Keep `websocket.py`'s error-code table
 and `src/types.ts`'s `JinjaboardErrorCode` union in sync by hand.
 
+### Debug envelope: a conditional response shape
+
+`jinjaboard/render` accepts one more optional flat field, `debug: boolean |
+str | [str]`, mirrored the same way as `template`/`globals`/`macros` in
+both `websocket.py`'s schema and `src/types.ts`'s `RenderRequest`/
+`StrategyConfig`. Unlike those, it changes the **response** shape
+conditionally: `connection.send_result` sends the bare parsed config
+exactly as before when `debug` is absent/falsy, but `{"config": <parsed
+config>, "debug": {duration_ms, raw_root_text, include_paths}}` when it
+was honored — so `src/strategy-common.ts`'s `createStrategyGenerate` must
+runtime-check the actual response shape (`isDebugEnvelope`) rather than
+assume the wrapped shape just because it asked for one. That's necessary
+because `debug` only actually activates for an **admin** connection
+(`connection.user.is_admin`, the same field already used for
+`jjb.user.is_admin` — checked directly in `websocket.py`, not threaded
+through template rendering) — a non-admin's truthy `debug` is treated as
+absent end-to-end: the bare shape is returned, and the backend skips
+collecting the raw text/timing/include list entirely for that request
+rather than only skipping sending it. The frontend never enforces this
+itself (it can't reliably know the current user's admin status up front,
+and the backend is the only real enforcement boundary either way) — it
+just always forwards whatever truthy `debug` value the strategy config
+has, and simply doesn't log anything when the backend's response comes
+back bare.
+
+`raw_root_text`/`include_paths` are collected by threading an optional
+`debug_trace: dict | None` mutable accumulator through the existing
+recursive render chain (`render_template` → `_render_and_parse` →
+`includes.parse_with_includes` → `_JinjaboardYamlLoader` →
+`_render_included_file`, and back into `_render_and_parse` for each
+nested `!include`) rather than changing any function's return type —
+`None` (the default) collects nothing, at zero cost to the many existing
+direct callers of `render_template` in `tests/` that don't pass it. Only
+the **root** template's raw (post-Jinja, pre-YAML-parse) text is kept,
+not every included file's — the root call is told apart from a nested one
+by checking whether `"raw_root_text"` is already present in the trace dict
+at entry, since the root always sets it before any nested include gets
+parsed.
+
 ### Template allowlist (`template_allowlist.py`)
 
 `path_guard.py` (above) is a traversal *guard* — it confines paths to

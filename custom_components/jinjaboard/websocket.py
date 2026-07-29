@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import voluptuous as vol
@@ -36,6 +37,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
         vol.Required("template"): str,
         vol.Optional("globals"): vol.Any(dict, str),
         vol.Optional("macros"): [str],
+        vol.Optional("debug"): vol.Any(bool, str, [str]),
         vol.Optional("client"): {
             vol.Optional("user_agent"): str,
             vol.Optional("viewport"): {
@@ -71,6 +73,19 @@ async def handle_render(
         "is_admin": connection.user.is_admin,
         "is_owner": connection.user.is_owner,
     }
+    # `debug:` (a `debug` panel viewable from the browser console) is
+    # backend-enforced to admins only — `connection.user.is_admin` is the
+    # same field already used above for `jjb.user.is_admin`, checked
+    # directly here rather than threaded through template rendering, since
+    # this is a WS-handler authorization gate, not a template variable. A
+    # non-admin's truthy `debug` is treated as if it were never sent: no
+    # raw-text/timing/include collection happens at all (not just omitted
+    # from the response), and the response comes back in the ordinary bare
+    # shape — the frontend never assumes the wrapped shape just because it
+    # asked for one.
+    debug_requested = bool(msg.get("debug")) and connection.user.is_admin
+    debug_trace: dict[str, Any] | None = {} if debug_requested else None
+    render_started = time.monotonic() if debug_requested else None
 
     try:
         path = resolve_config_path(hass, relative_path)
@@ -114,6 +129,7 @@ async def handle_render(
             macro_paths,
             user_vars,
             client_vars,
+            debug_trace,
         )
     except JinjaboardPathError as err:
         # Raised here (rather than only by the resolve_config_path call
@@ -170,4 +186,18 @@ async def handle_render(
         )
         return
 
-    connection.send_result(msg["id"], result)
+    if debug_requested:
+        duration_ms = round((time.monotonic() - render_started) * 1000, 1)
+        connection.send_result(
+            msg["id"],
+            {
+                "config": result,
+                "debug": {
+                    "duration_ms": duration_ms,
+                    "raw_root_text": debug_trace.get("raw_root_text", ""),
+                    "include_paths": debug_trace.get("include_paths", []),
+                },
+            },
+        )
+    else:
+        connection.send_result(msg["id"], result)

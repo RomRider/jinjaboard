@@ -39,12 +39,18 @@ export function renderTemplate(
   template: string,
   globals?: Record<string, unknown> | string,
   macros?: string[],
+  debug?: boolean | string | string[],
 ): Promise<unknown> {
+  // A list is only meaningfully "set" when non-empty — an explicit `[]`
+  // (or `false`/`""`) is folded to `undefined` so it's omitted from the
+  // request entirely, same as `globals`/`macros` above.
+  const hasDebug = Array.isArray(debug) ? debug.length > 0 : Boolean(debug);
   const request: RenderRequest = {
     type: "jinjaboard/render",
     template,
     globals,
     macros,
+    debug: hasDebug ? debug : undefined,
     client: gatherClientContext(hass),
   };
   return hass.callWS(request);

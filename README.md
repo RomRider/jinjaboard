@@ -441,6 +441,46 @@ every macro body. Nothing needs to be declared in `strategy:` to use them.
   frontend build) — use Jinja's `| default(...)` filter, same as any other
   optional value, rather than assuming it's always set.
 
+### Debugging a template: `debug:`
+
+Add `debug: true` to any dashboard/view/section's `strategy:` stanza and,
+the next time that strategy renders, the browser's JS console logs the
+render result in a collapsed group prefixed `Jinjaboard:` — the parsed
+config, the render duration, the root template's raw (post-Jinja,
+pre-YAML) output, and the list of `!include`/`!include_dir_*` files it
+pulled in.
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: dashboards/home.yaml.j2
+  debug: true
+```
+
+Set `debug` to a dot-separated path instead of `true` to narrow just the
+logged *parsed result* to one subtree — useful once a dashboard has grown
+large enough that the full config is unwieldy to read in devtools. Numeric
+segments index into a list, and a list of paths logs each one separately:
+
+```yaml
+strategy:
+  type: custom:jinjaboard
+  template: dashboards/home.yaml.j2
+  debug:
+    - "views.2.cards.0"   # only this one card's config is logged
+    - "views.0.cards.1"
+```
+
+The raw root text, duration, and include list are always logged in full
+regardless of the path filter — only the parsed-result portion is narrowed.
+
+> [!NOTE]
+> `debug:` only takes effect for an **admin** user viewing the dashboard —
+> a non-admin's `debug: true` is silently ignored (the dashboard renders
+> normally, with nothing extra logged to the console). This is enforced
+> on the backend, not just hidden in the UI, so it can't be worked around
+> from the browser.
+
 ## Real-world examples
 
 **Every light, grouped by room, with zero upkeep.** The example under

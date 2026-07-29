@@ -171,4 +171,154 @@ describe("createStrategyGenerate", () => {
 
     expect(buildErrorResult).toHaveBeenCalledWith(error);
   });
+
+  it("does not console.error on WS rejection when debug is absent", async () => {
+    const error: JinjaboardWsError = { code: "template_error", message: "boom" };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const generate = createStrategyGenerate(vi.fn().mockReturnValue({ cards: [] }));
+
+    await generate({ template: "home.yaml.j2" }, mockHass(vi.fn().mockRejectedValue(error)));
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  describe("debug", () => {
+    it("forwards debug to the WS call when set", async () => {
+      const callWS = vi.fn().mockResolvedValue({ views: [] });
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate({ template: "home.yaml.j2", debug: true }, mockHass(callWS));
+
+      expect(callWS).toHaveBeenCalledWith(expect.objectContaining({ debug: true }));
+    });
+
+    it("unwraps a {config, debug} envelope and returns the config", async () => {
+      const config = { views: [] };
+      const wsResult = { config, debug: { duration_ms: 5, raw_root_text: "x", include_paths: [] } };
+      const generate = createStrategyGenerate(vi.fn());
+      vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+
+      const result = await generate(
+        { template: "home.yaml.j2", debug: true },
+        mockHass(vi.fn().mockResolvedValue(wsResult)),
+      );
+
+      expect(result).toBe(config);
+      vi.restoreAllMocks();
+    });
+
+    it("logs to the console when the response is a debug envelope", async () => {
+      const config = { views: [] };
+      const wsResult = { config, debug: { duration_ms: 5, raw_root_text: "raw text", include_paths: ["a.yaml.j2"] } };
+      const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate({ template: "home.yaml.j2", debug: true }, mockHass(vi.fn().mockResolvedValue(wsResult)));
+
+      expect(groupCollapsed).toHaveBeenCalledWith(expect.stringMatching(/^Jinjaboard: home\.yaml\.j2 \(5ms\)/));
+      expect(log).toHaveBeenCalledWith("Result", config);
+      expect(log).toHaveBeenCalledWith("Raw root template output:\nraw text");
+      expect(log).toHaveBeenCalledWith("Included files:", ["a.yaml.j2"]);
+      expect(groupEnd).toHaveBeenCalled();
+
+      groupCollapsed.mockRestore();
+      log.mockRestore();
+      groupEnd.mockRestore();
+    });
+
+    it("puts the raw root text on its own line below the label, not glued onto it", async () => {
+      const wsResult = {
+        config: {},
+        debug: { duration_ms: 1, raw_root_text: "views:\n  - title: fine\n", include_paths: [] },
+      };
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate({ template: "a.yaml.j2", debug: true }, mockHass(vi.fn().mockResolvedValue(wsResult)));
+
+      expect(log).toHaveBeenCalledWith("Raw root template output:\nviews:\n  - title: fine\n");
+
+      vi.restoreAllMocks();
+    });
+
+    it("applies the output-path filter when debug is a string", async () => {
+      const config = { views: [{ cards: ["a", "b"] }] };
+      const wsResult = { config, debug: { duration_ms: 1, raw_root_text: "", include_paths: [] } };
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate(
+        { template: "home.yaml.j2", debug: "views.0.cards.1" },
+        mockHass(vi.fn().mockResolvedValue(wsResult)),
+      );
+
+      expect(log).toHaveBeenCalledWith("Result (views.0.cards.1)", "b");
+
+      vi.restoreAllMocks();
+    });
+
+    it("logs each path in a debug list under its own key", async () => {
+      const config = { views: [{ cards: ["a", "b"] }] };
+      const wsResult = { config, debug: { duration_ms: 1, raw_root_text: "", include_paths: [] } };
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate(
+        { template: "home.yaml.j2", debug: ["views.0.cards.0", "views.0.cards.1"] },
+        mockHass(vi.fn().mockResolvedValue(wsResult)),
+      );
+
+      expect(log).toHaveBeenCalledWith("Result (views.0.cards.0, views.0.cards.1)", {
+        "views.0.cards.0": "a",
+        "views.0.cards.1": "b",
+      });
+
+      vi.restoreAllMocks();
+    });
+
+    it("does not log to the console when the response is bare (e.g. non-admin request)", async () => {
+      const bareResult = { views: [] };
+      const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      const result = await generate(
+        { template: "home.yaml.j2", debug: true },
+        mockHass(vi.fn().mockResolvedValue(bareResult)),
+      );
+
+      expect(groupCollapsed).not.toHaveBeenCalled();
+      expect(result).toBe(bareResult);
+      groupCollapsed.mockRestore();
+    });
+
+    it("logs console.error on WS rejection when debug is set", async () => {
+      const error: JinjaboardWsError = { code: "template_error", message: "boom" };
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const buildErrorResult = vi.fn().mockReturnValue({ cards: [] });
+      const generate = createStrategyGenerate(buildErrorResult);
+
+      await generate(
+        { template: "home.yaml.j2", debug: true },
+        mockHass(vi.fn().mockRejectedValue(error)),
+      );
+
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining("Jinjaboard: render failed for home.yaml.j2"),
+        error,
+      );
+      expect(buildErrorResult).toHaveBeenCalledWith(error);
+      consoleError.mockRestore();
+    });
+  });
 });

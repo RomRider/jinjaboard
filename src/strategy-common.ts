@@ -1,5 +1,12 @@
 import { renderTemplate } from "./ws";
-import type { HomeAssistant, JinjaboardErrorCode, JinjaboardWsError, StrategyConfig } from "./types";
+import type {
+  HomeAssistant,
+  JinjaboardDebugEnvelope,
+  JinjaboardDebugInfo,
+  JinjaboardErrorCode,
+  JinjaboardWsError,
+  StrategyConfig,
+} from "./types";
 
 interface ErrorPresentation {
   icon: string;
@@ -144,6 +151,73 @@ export function errorCard(error: JinjaboardWsError) {
 }
 
 /**
+ * Narrows `value` to the subtree at dot-separated `path` (e.g.
+ * `"views.2.cards.0"`) — a numeric segment indexes into an array the same
+ * as any other key, since bracket notation on a JS array accepts a
+ * numeric-looking string (`arr["0"] === arr[0]`), so no separate
+ * `Number()`/`isNaN` branching is needed. Returns `undefined` if the path
+ * doesn't resolve.
+ */
+function selectByPath(value: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((acc, segment) => {
+    if (acc === undefined || acc === null || segment === "") return acc;
+    return (acc as Record<string, unknown>)[segment];
+  }, value);
+}
+
+/**
+ * Resolves what to log as the "Result" entry for a given `debug` option:
+ * the full config for `true`/`undefined`, one selected subtree for a
+ * single path string, or an object keyed by each path (mapped to its own
+ * selected subtree) for a list — so a multi-path `debug:` list logs each
+ * requested subtree distinctly instead of collapsing them together.
+ */
+function selectDebugSubtree(fullConfig: unknown, outputPath: boolean | string | string[] | undefined): unknown {
+  if (typeof outputPath === "string") return selectByPath(fullConfig, outputPath);
+  if (Array.isArray(outputPath)) {
+    return Object.fromEntries(outputPath.map((path) => [path, selectByPath(fullConfig, path)]));
+  }
+  return fullConfig;
+}
+
+/**
+ * A non-admin's truthy `debug` request is silently downgraded server-side
+ * to the bare, unwrapped result — so the frontend must check the actual
+ * response shape, never assume the wrapped envelope just because it asked
+ * for one.
+ */
+function isDebugEnvelope(value: unknown): value is JinjaboardDebugEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "config" in value &&
+    "debug" in value &&
+    typeof (value as { debug: unknown }).debug === "object" &&
+    (value as { debug: unknown }).debug !== null
+  );
+}
+
+function logDebugToConsole(
+  template: string,
+  info: JinjaboardDebugInfo,
+  outputPath: boolean | string | string[] | undefined,
+  fullConfig: unknown,
+): void {
+  const resultLabel =
+    outputPath === true || outputPath === undefined ? "Result" : `Result (${[outputPath].flat().join(", ")})`;
+  // eslint-disable-next-line no-console
+  console.groupCollapsed(`Jinjaboard: ${template} (${info.duration_ms}ms)`);
+  console.log(resultLabel, selectDebugSubtree(fullConfig, outputPath));
+  // The label and the raw text are one log call, joined by "\n" (not the
+  // usual `console.log(label, value)` two-arg form used elsewhere in this
+  // function) so the often-multi-line raw YAML text always starts on its
+  // own line below the label, instead of running on right after it.
+  console.log(`Raw root template output:\n${info.raw_root_text}`);
+  console.log("Included files:", info.include_paths);
+  console.groupEnd();
+}
+
+/**
  * Builds the static `generate(config, hass)` HA looks up on a strategy
  * custom element — shared across the dashboard/view/section strategies,
  * which differ only in the registered tag and the error-result shape
@@ -161,9 +235,19 @@ export function createStrategyGenerate(buildErrorResult: (error: JinjaboardWsErr
       });
     }
 
+    const debugOption = config?.debug;
     try {
-      return await renderTemplate(hass, template, config?.globals, config?.macros);
+      const result = await renderTemplate(hass, template, config?.globals, config?.macros, debugOption);
+      if (isDebugEnvelope(result)) {
+        logDebugToConsole(template, result.debug, debugOption, result.config);
+        return result.config;
+      }
+      return result;
     } catch (err) {
+      if (debugOption) {
+        // eslint-disable-next-line no-console
+        console.error(`Jinjaboard: render failed for ${template}`, err);
+      }
       return buildErrorResult(err as JinjaboardWsError);
     }
   };
