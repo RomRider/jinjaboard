@@ -446,9 +446,9 @@ every macro body. Nothing needs to be declared in `strategy:` to use them.
 Add `debug: true` to any dashboard/view/section's `strategy:` stanza and,
 the next time that strategy renders, the browser's JS console logs the
 render result in a collapsed group prefixed `Jinjaboard:` — the parsed
-config, the render duration, the root template's raw (post-Jinja,
-pre-YAML) output, and the list of `!include`/`!include_dir_*` files it
-pulled in.
+config, the render duration, and the raw (post-Jinja, pre-YAML) output of
+every file the render touched, root **and** every `!include`/
+`!include_dir_*` it pulled in, each in its own nested collapsed group.
 
 ```yaml
 strategy:
@@ -457,22 +457,35 @@ strategy:
   debug: true
 ```
 
-Set `debug` to a dot-separated path instead of `true` to narrow just the
-logged *parsed result* to one subtree — useful once a dashboard has grown
-large enough that the full config is unwieldy to read in devtools. Numeric
-segments index into a list, and a list of paths logs each one separately:
+Set `debug` to a dot-separated path instead of `true` to narrow the logged
+*parsed result* to one subtree, **and** narrow the raw output shown to just
+the file that subtree actually came from — useful once a dashboard has
+grown large enough, or split across enough included files, that dumping
+everything is unwieldy. Numeric segments index into a list, and a list of
+paths logs each one separately:
 
 ```yaml
 strategy:
   type: custom:jinjaboard
   template: dashboards/home.yaml.j2
   debug:
-    - "views.2.cards.0"   # only this one card's config is logged
+    - "views.2.cards.0"   # only this one card's config + source file is logged
     - "views.0.cards.1"
 ```
 
-The raw root text, duration, and include list are always logged in full
-regardless of the path filter — only the parsed-result portion is narrowed.
+If a selected path's content lives directly in the root template rather
+than an `!include`d file, the root's raw output is shown instead — there's
+always a fallback, never an empty result.
+
+Two edge cases are worth knowing about:
+- A file `!include`d whose entire content is a single bare value (e.g. just
+  a string or number, not a mapping/list) can't be matched back to a
+  specific path in the parsed result, so a `debug` path pointing at it
+  falls back to showing the root's raw output instead of that file's.
+- If the exact same file is `!include`d more than once (e.g. with different
+  `vars:` producing different rendered output each time), only the last
+  occurrence's raw output is kept — there's no way to distinguish between
+  repeated inclusions of one file in the console output.
 
 > [!NOTE]
 > `debug:` only takes effect for an **admin** user viewing the dashboard —

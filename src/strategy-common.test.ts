@@ -195,7 +195,10 @@ describe("createStrategyGenerate", () => {
 
     it("unwraps a {config, debug} envelope and returns the config", async () => {
       const config = { views: [] };
-      const wsResult = { config, debug: { duration_ms: 5, raw_root_text: "x", include_paths: [] } };
+      const wsResult = {
+        config,
+        debug: { duration_ms: 5, root_path: "home.yaml.j2", raw_texts: { "home.yaml.j2": "x" }, origins: {} },
+      };
       const generate = createStrategyGenerate(vi.fn());
       vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
       vi.spyOn(console, "log").mockImplementation(() => {});
@@ -210,9 +213,17 @@ describe("createStrategyGenerate", () => {
       vi.restoreAllMocks();
     });
 
-    it("logs to the console when the response is a debug envelope", async () => {
+    it("with no path filter, logs the result and a nested group per touched file", async () => {
       const config = { views: [] };
-      const wsResult = { config, debug: { duration_ms: 5, raw_root_text: "raw text", include_paths: ["a.yaml.j2"] } };
+      const wsResult = {
+        config,
+        debug: {
+          duration_ms: 5,
+          root_path: "home.yaml.j2",
+          raw_texts: { "home.yaml.j2": "raw text", "a.yaml.j2": "include text" },
+          origins: {},
+        },
+      };
       const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
@@ -222,8 +233,10 @@ describe("createStrategyGenerate", () => {
 
       expect(groupCollapsed).toHaveBeenCalledWith(expect.stringMatching(/^Jinjaboard: home\.yaml\.j2 \(5ms\)/));
       expect(log).toHaveBeenCalledWith("Result", config);
-      expect(log).toHaveBeenCalledWith("Raw root template output:\nraw text");
-      expect(log).toHaveBeenCalledWith("Included files:", ["a.yaml.j2"]);
+      expect(groupCollapsed).toHaveBeenCalledWith("Raw template output (root)");
+      expect(log).toHaveBeenCalledWith("raw text");
+      expect(groupCollapsed).toHaveBeenCalledWith("Raw template output: a.yaml.j2");
+      expect(log).toHaveBeenCalledWith("include text");
       expect(groupEnd).toHaveBeenCalled();
 
       groupCollapsed.mockRestore();
@@ -231,26 +244,12 @@ describe("createStrategyGenerate", () => {
       groupEnd.mockRestore();
     });
 
-    it("puts the raw root text on its own line below the label, not glued onto it", async () => {
-      const wsResult = {
-        config: {},
-        debug: { duration_ms: 1, raw_root_text: "views:\n  - title: fine\n", include_paths: [] },
-      };
-      const log = vi.spyOn(console, "log").mockImplementation(() => {});
-      vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
-      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
-      const generate = createStrategyGenerate(vi.fn());
-
-      await generate({ template: "a.yaml.j2", debug: true }, mockHass(vi.fn().mockResolvedValue(wsResult)));
-
-      expect(log).toHaveBeenCalledWith("Raw root template output:\nviews:\n  - title: fine\n");
-
-      vi.restoreAllMocks();
-    });
-
     it("applies the output-path filter when debug is a string", async () => {
       const config = { views: [{ cards: ["a", "b"] }] };
-      const wsResult = { config, debug: { duration_ms: 1, raw_root_text: "", include_paths: [] } };
+      const wsResult = {
+        config,
+        debug: { duration_ms: 1, root_path: "home.yaml.j2", raw_texts: {}, origins: {} },
+      };
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
       vi.spyOn(console, "groupEnd").mockImplementation(() => {});
@@ -268,7 +267,10 @@ describe("createStrategyGenerate", () => {
 
     it("logs each path in a debug list under its own key", async () => {
       const config = { views: [{ cards: ["a", "b"] }] };
-      const wsResult = { config, debug: { duration_ms: 1, raw_root_text: "", include_paths: [] } };
+      const wsResult = {
+        config,
+        debug: { duration_ms: 1, root_path: "home.yaml.j2", raw_texts: {}, origins: {} },
+      };
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
       vi.spyOn(console, "groupEnd").mockImplementation(() => {});
@@ -283,6 +285,99 @@ describe("createStrategyGenerate", () => {
         "views.0.cards.0": "a",
         "views.0.cards.1": "b",
       });
+
+      vi.restoreAllMocks();
+    });
+
+    it("a path filter resolving to a nested include's origin logs only that file's raw text", async () => {
+      const config = { views: [{ cards: ["a"] }] };
+      const wsResult = {
+        config,
+        debug: {
+          duration_ms: 1,
+          root_path: "home.yaml.j2",
+          raw_texts: { "home.yaml.j2": "root text", "cards/light.yaml.j2": "card text" },
+          origins: { "views.0.cards.0": "cards/light.yaml.j2" },
+        },
+      };
+      const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate(
+        { template: "home.yaml.j2", debug: "views.0.cards.0" },
+        mockHass(vi.fn().mockResolvedValue(wsResult)),
+      );
+
+      expect(groupCollapsed).toHaveBeenCalledWith("Raw template output: cards/light.yaml.j2");
+      expect(log).toHaveBeenCalledWith("card text");
+      expect(groupCollapsed).not.toHaveBeenCalledWith("Raw template output (root)");
+      expect(log).not.toHaveBeenCalledWith("root text");
+
+      vi.restoreAllMocks();
+    });
+
+    it("a path filter with no matching origin falls back to the root's raw text", async () => {
+      const config = { views: [{ cards: ["a"] }] };
+      const wsResult = {
+        config,
+        debug: {
+          duration_ms: 1,
+          root_path: "home.yaml.j2",
+          raw_texts: { "home.yaml.j2": "root text" },
+          origins: {},
+        },
+      };
+      const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      await generate(
+        { template: "home.yaml.j2", debug: "views.0.cards.0" },
+        mockHass(vi.fn().mockResolvedValue(wsResult)),
+      );
+
+      expect(groupCollapsed).toHaveBeenCalledWith("Raw template output (root)");
+      expect(log).toHaveBeenCalledWith("root text");
+
+      vi.restoreAllMocks();
+    });
+
+    it("a list of paths resolving to two different files logs both, deduped when two paths share a file", async () => {
+      const config = { views: [{ cards: ["a", "b", "c"] }] };
+      const wsResult = {
+        config,
+        debug: {
+          duration_ms: 1,
+          root_path: "home.yaml.j2",
+          raw_texts: { "home.yaml.j2": "root text", "cards/light.yaml.j2": "light card text" },
+          origins: {
+            "views.0.cards.0": "cards/light.yaml.j2",
+            "views.0.cards.1": "cards/light.yaml.j2",
+          },
+        },
+      };
+      const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+      const generate = createStrategyGenerate(vi.fn());
+
+      // views.0.cards.0 and .1 both resolve to cards/light.yaml.j2 (deduped
+      // to one group); views.0.cards.2 has no origin entry, falling back to
+      // the root — two distinct groups total, not three.
+      await generate(
+        { template: "home.yaml.j2", debug: ["views.0.cards.0", "views.0.cards.1", "views.0.cards.2"] },
+        mockHass(vi.fn().mockResolvedValue(wsResult)),
+      );
+
+      const rawTextGroupCalls = groupCollapsed.mock.calls.filter((call) =>
+        String(call[0]).startsWith("Raw template output"),
+      );
+      expect(rawTextGroupCalls).toHaveLength(2);
+      expect(groupCollapsed).toHaveBeenCalledWith("Raw template output: cards/light.yaml.j2");
+      expect(groupCollapsed).toHaveBeenCalledWith("Raw template output (root)");
 
       vi.restoreAllMocks();
     });

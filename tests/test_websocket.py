@@ -350,11 +350,87 @@ async def test_render_debug_true_wraps_result_with_trace(
     debug = response["result"]["debug"]
     assert isinstance(debug["duration_ms"], (int, float))
     assert debug["duration_ms"] >= 0
+    assert debug["root_path"] == "root.yaml.j2"
     # The root's raw text is pre-YAML-parse — the `!include` tag itself is
     # still literally present, not yet resolved to the included file's
     # contents.
-    assert "!include included.yaml.j2" in debug["raw_root_text"]
-    assert debug["include_paths"] == ["included.yaml.j2"]
+    assert "!include included.yaml.j2" in debug["raw_texts"]["root.yaml.j2"]
+    # `Template.async_render` trims trailing whitespace, so a plain (no
+    # Jinja) file's raw text comes back without its trailing newline.
+    assert debug["raw_texts"]["included.yaml.j2"] == "value: from_include"
+    assert debug["origins"]["cards"] == "included.yaml.j2"
+
+
+async def test_render_debug_origin_uses_config_dir_relative_path(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    """A nested root (its own directory isn't `config_dir` itself) whose
+    `!include` target is written relative to *its* directory — real HA
+    `!include` semantics — must still be attributed in `origins`/keyed in
+    `raw_texts` by the config-dir-relative path, not the literal tag text,
+    so the two correlate. This is the scenario that would break if
+    `origin_by_id` were tagged with the raw `!include` argument instead of
+    a recomputed config-dir-relative path."""
+    write_template("dashboards/cards/light.yaml.j2", "type: light\n")
+    write_template(
+        "dashboards/root.yaml.j2", "cards: !include cards/light.yaml.j2\n"
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "jinjaboard/render",
+            "template": "dashboards/root.yaml.j2",
+            "debug": True,
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"]["config"] == {"cards": {"type": "light"}}
+    debug = response["result"]["debug"]
+    assert debug["root_path"] == "dashboards/root.yaml.j2"
+    assert set(debug["raw_texts"]) == {
+        "dashboards/root.yaml.j2",
+        "dashboards/cards/light.yaml.j2",
+    }
+    assert debug["origins"]["cards"] == "dashboards/cards/light.yaml.j2"
+
+
+async def test_render_debug_origins_for_include_dir_named(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("cards_dir/kitchen.yaml.j2", "type: kitchen\n")
+    write_template("cards_dir/living.yaml.j2", "type: living\n")
+    write_template("root.yaml.j2", "cards: !include_dir_named cards_dir\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    debug = response["result"]["debug"]
+    assert debug["origins"]["cards.kitchen"] == "cards_dir/kitchen.yaml.j2"
+    assert debug["origins"]["cards.living"] == "cards_dir/living.yaml.j2"
+
+
+async def test_render_debug_scalar_include_has_no_origin_entry(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    """A bare-scalar `!include` result can't be attributed via object
+    identity (CPython interns small ints/short strings) — its raw text is
+    still captured, but no `origins` entry is created for it, so the
+    frontend falls back to showing the root's raw text for that path."""
+    write_template("scalar.yaml.j2", "hello\n")
+    write_template("root.yaml.j2", "value: !include scalar.yaml.j2\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    assert response["result"]["config"] == {"value": "hello"}
+    debug = response["result"]["debug"]
+    assert "value" not in debug["origins"]
+    assert debug["raw_texts"]["scalar.yaml.j2"] == "hello"
 
 
 async def test_render_debug_string_path_ignored_by_backend(

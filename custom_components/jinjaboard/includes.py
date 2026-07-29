@@ -84,6 +84,20 @@ def _is_visible(name: str) -> bool:
     return not name.startswith(".")
 
 
+def _display_path(hass: HomeAssistant, path: Path) -> str:
+    """Config-dir-relative display path for `debug:` output — mirrors
+    `template_engine._debug_display_path` exactly (duplicated, not
+    imported, to avoid a circular import between the two modules: this
+    module is already imported by `template_engine.py`). Must compute the
+    identical key `_render_and_parse` uses for `raw_texts`, since
+    `_render_included_file` below tags `origin_by_id` with this same value
+    — a mismatch would silently break every `origins` lookup."""
+    try:
+        return str(path.relative_to(Path(hass.config.config_dir).resolve()))
+    except ValueError:
+        return str(path)
+
+
 def find_template_files(directory: Path) -> list[Path]:
     """Recursively list matching files under `directory`.
 
@@ -276,7 +290,7 @@ def _render_included_file(
         inc_vars = {**(inc_vars or {}), **extra_vars}
 
     try:
-        return loader.render_and_parse(
+        value = loader.render_and_parse(
             loader.hass,
             target,
             source,
@@ -293,6 +307,33 @@ def _render_included_file(
             f"in included file {relative_path!r} (included at line {node_line}): {err}",
         ) + err.args[1:]
         raise
+
+    if loader.debug_trace is not None and isinstance(value, (dict, list)):
+        # Tags this include's resolved value by Python object identity so
+        # `websocket.py` can later attribute a dot-path in the *final*
+        # parsed result back to the file it came from — object identity
+        # survives being placed into a new outer dict/list (by
+        # `!include_dir_list`/`_named`), so this single choke point (every
+        # include constructor funnels through `_render_included_file`)
+        # covers all five tag types. Scalars are skipped: CPython interns
+        # small ints/bools/short strings, so `id()` on one could collide
+        # with an unrelated equal value elsewhere in the tree.
+        #
+        # Tagged with `_display_path(target)`, *not* `relative_path` — the
+        # latter is relative to the *including* file's own directory
+        # (matching real HA's `!include` resolution), which can differ
+        # from `target`'s config-dir-relative path (e.g. a root at
+        # `dashboards/home.yaml.j2` including `cards/light.yaml.j2`
+        # resolves to `dashboards/cards/light.yaml.j2`). `raw_texts` in
+        # `template_engine._render_and_parse` keys every file by that same
+        # config-dir-relative path, so `origin_by_id`'s values must match
+        # it exactly for `websocket.py`'s `origins` map to ever correlate
+        # with a `raw_texts` entry.
+        loader.debug_trace.setdefault("origin_by_id", {})[id(value)] = _display_path(
+            loader.hass, target
+        )
+
+    return value
 
 
 def _resolve_dir(

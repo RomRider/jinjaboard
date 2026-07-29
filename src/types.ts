@@ -49,10 +49,24 @@ export interface JinjaboardWsError {
 /** Debug metadata accompanying a render result — see `JinjaboardDebugEnvelope`. */
 export interface JinjaboardDebugInfo {
   duration_ms: number;
-  /** The root template's post-Jinja, pre-YAML-parse text. */
-  raw_root_text: string;
-  /** Every `!include`/`!include_dir_*` file touched, root excluded. */
-  include_paths: string[];
+  /** The display path (relative to the HA config directory) of the entry-point template. */
+  root_path: string;
+  /**
+   * Every touched file's post-Jinja, pre-YAML-parse text, keyed by display
+   * path — root included, under `root_path`. A file `!include`d more than
+   * once keeps only its last occurrence's rendered text.
+   */
+  raw_texts: Record<string, string>;
+  /**
+   * Maps a dot-path into the parsed result (e.g. `"views.2.cards.0"`) to
+   * the display path of the file that subtree came from, for every part
+   * of the result that originated from an `!include` whose resolved value
+   * was a dict/list — a path with no entry here lives directly in
+   * `root_path`. Only the most specific (deepest) path a given node
+   * matches is guaranteed present; see `resolveOrigin` in
+   * strategy-common.ts.
+   */
+  origins: Record<string, string>;
 }
 
 /**

@@ -372,7 +372,7 @@ both `websocket.py`'s schema and `src/types.ts`'s `RenderRequest`/
 `StrategyConfig`. Unlike those, it changes the **response** shape
 conditionally: `connection.send_result` sends the bare parsed config
 exactly as before when `debug` is absent/falsy, but `{"config": <parsed
-config>, "debug": {duration_ms, raw_root_text, include_paths}}` when it
+config>, "debug": {duration_ms, root_path, raw_texts, origins}}` when it
 was honored — so `src/strategy-common.ts`'s `createStrategyGenerate` must
 runtime-check the actual response shape (`isDebugEnvelope`) rather than
 assume the wrapped shape just because it asked for one. That's necessary
@@ -381,7 +381,7 @@ because `debug` only actually activates for an **admin** connection
 `jjb.user.is_admin` — checked directly in `websocket.py`, not threaded
 through template rendering) — a non-admin's truthy `debug` is treated as
 absent end-to-end: the bare shape is returned, and the backend skips
-collecting the raw text/timing/include list entirely for that request
+collecting the raw text/timing/origin data entirely for that request
 rather than only skipping sending it. The frontend never enforces this
 itself (it can't reliably know the current user's admin status up front,
 and the backend is the only real enforcement boundary either way) — it
@@ -389,19 +389,59 @@ just always forwards whatever truthy `debug` value the strategy config
 has, and simply doesn't log anything when the backend's response comes
 back bare.
 
-`raw_root_text`/`include_paths` are collected by threading an optional
+`root_path`/`raw_texts` are collected by threading an optional
 `debug_trace: dict | None` mutable accumulator through the existing
 recursive render chain (`render_template` → `_render_and_parse` →
 `includes.parse_with_includes` → `_JinjaboardYamlLoader` →
 `_render_included_file`, and back into `_render_and_parse` for each
 nested `!include`) rather than changing any function's return type —
 `None` (the default) collects nothing, at zero cost to the many existing
-direct callers of `render_template` in `tests/` that don't pass it. Only
-the **root** template's raw (post-Jinja, pre-YAML-parse) text is kept,
-not every included file's — the root call is told apart from a nested one
-by checking whether `"raw_root_text"` is already present in the trace dict
-at entry, since the root always sets it before any nested include gets
+direct callers of `render_template` in `tests/` that don't pass it.
+`raw_texts` keys **every** touched file's raw (post-Jinja, pre-YAML-parse)
+text by its config-dir-relative display path, root included — not just
+the root's, unlike the feature's first iteration — since `_render_and_parse`
+computes this `raw` text on every recursive call already, root and every
+nested include alike; only discarding it for non-root calls was ever a
+choice, not a limitation. The root call is told apart from a nested one by
+checking whether `"root_path"` is already present in the trace dict at
+entry, since the root always sets it (once) before any nested include gets
 parsed.
+
+**`origins`: attributing a parsed-result path back to its source file.**
+The parsed result and the raw text serve different purposes — the parsed
+result is the *final* structure after every `!include` is resolved and
+spliced in, so a `debug` output path like `"views.2.cards.0"` only tells
+you which file to show raw text for if something maps that path back to a
+source file. `websocket.py`'s `_walk_origins` builds that map by walking
+the final `result` (still live Python objects, before JSON serialization —
+this only works pre-serialization, since it depends on object identity)
+and checking, at every dict/list node, whether `id(node)` is a key in
+`debug_trace["origin_by_id"]`. That map is populated in
+`includes.py::_render_included_file` — the single choke point all five
+`!include*` tag constructors funnel through — tagging each include's
+resolved `dict`/`list` value (scalars are skipped: CPython interns small
+ints/bools/short strings, so tagging one by `id()` risks a false-positive
+match against an unrelated equal value elsewhere in the tree) with its own
+display path. Object identity survives being placed into a new outer
+container (`!include_dir_list`/`_named` build a new list/dict around each
+file's already-tagged return value without copying it), so this one tagging
+point covers every include form; `!include_dir_merge_list`/`_merge_named`
+intentionally break identity at the "whole file" level (multiple files'
+content is deliberately flattened into one new container) but nested
+values one level down keep their own tagged identity, so lookups still
+resolve correctly at that depth. Critically, `_render_included_file` tags
+with a config-dir-relative display path recomputed the same way
+`_render_and_parse`'s `raw_texts` key is (a small duplicated helper,
+`includes._display_path` — not imported from `template_engine.py`, to
+avoid a circular import, since that module already imports from this one)
+— **not** the raw `!include` tag argument, which is relative to the
+*including* file's own directory (matching real HA `!include` semantics)
+and can differ from the config-dir-relative path once nesting is involved.
+Tagging with the wrong one would silently break every `origins` lookup,
+since `src/strategy-common.ts`'s `resolveOrigin` (walks a requested path's
+prefixes from longest to shortest against `origins`, falling back to
+`root_path` if nothing matches) needs an `origins` value that's a real key
+into `raw_texts`.
 
 ### Template allowlist (`template_allowlist.py`)
 

@@ -410,24 +410,24 @@ def _render_and_parse(
 
     `debug_trace`, when not `None`, is mutated in place to collect data for
     the `debug:` WS response envelope (see `websocket.py::handle_render`):
-    `"raw_root_text"` (the root file's post-Jinja/pre-YAML text) and
-    `"include_paths"` (every `!include`/`!include_dir_*` file touched,
-    root excluded, in traversal order). Whether *this* call is the root or
-    a nested include is told apart by whether `"raw_root_text"` is already
-    present at entry — the root's own call always sets it (right below)
-    before any nested include is parsed, since that only happens inside
-    `parse_with_includes`, called after.
+    `"root_path"` (the root file's own display path, set exactly once) and
+    `"raw_texts"` (every touched file's post-Jinja/pre-YAML text, root
+    included, keyed by display path — root excluded, or a file `!include`d
+    more than once, discarded in favor of that entry's own key). Whether
+    *this* call is the root or a nested include is told apart by whether
+    `"root_path"` is already present at entry — the root's own call always
+    sets it (right below) before any nested include is parsed, since that
+    only happens inside `parse_with_includes`, called after.
     """
-    if debug_trace is not None and "raw_root_text" in debug_trace:
-        debug_trace.setdefault("include_paths", []).append(
-            _debug_display_path(hass, path)
-        )
+    display_path = _debug_display_path(hass, path)
+    if debug_trace is not None and "root_path" not in debug_trace:
+        debug_trace["root_path"] = display_path
 
     raw = _render_jinja(
         hass, source, global_vars, inc_vars, macro_vars, user_vars, client_vars
     )
     if debug_trace is not None:
-        debug_trace.setdefault("raw_root_text", raw)
+        debug_trace.setdefault("raw_texts", {})[display_path] = raw
 
     try:
         return parse_with_includes(
@@ -546,8 +546,8 @@ def render_template(
     `client_vars` (`jjb.client`, frontend-supplied and unverifiable) are
     likewise constant for the whole tree.
 
-    `debug_trace`, when not `None`, is mutated to carry `"raw_root_text"`
-    and `"include_paths"` for the `debug:` WS response envelope — see
+    `debug_trace`, when not `None`, is mutated to carry `"root_path"` and
+    `"raw_texts"` for the `debug:` WS response envelope — see
     `_render_and_parse`'s docstring. Existing callers that don't pass it
     are unaffected (default `None`, nothing collected).
     """

@@ -197,6 +197,31 @@ function isDebugEnvelope(value: unknown): value is JinjaboardDebugEnvelope {
   );
 }
 
+/**
+ * Finds the most specific file a dot-path's content came from: checks
+ * successively shorter prefixes of `path` against `origins`
+ * (`"views.2.cards.0"` -> `"views.2.cards"` -> `"views.2"` -> `"views"`,
+ * longest/most-specific first), falling back to `rootPath` if nothing
+ * matches — meaning that content lives directly in the root file (or
+ * came from a scalar `!include` that couldn't be attributed by identity,
+ * see `includes.py::_render_included_file`).
+ */
+function resolveOrigin(path: string, origins: Record<string, string>, rootPath: string): string {
+  const segments = path.split(".");
+  for (let length = segments.length; length > 0; length--) {
+    const prefix = segments.slice(0, length).join(".");
+    if (prefix in origins) return origins[prefix];
+  }
+  return rootPath;
+}
+
+function logRawText(path: string, text: string, rootPath: string): void {
+  // eslint-disable-next-line no-console
+  console.groupCollapsed(path === rootPath ? "Raw template output (root)" : `Raw template output: ${path}`);
+  console.log(text);
+  console.groupEnd();
+}
+
 function logDebugToConsole(
   template: string,
   info: JinjaboardDebugInfo,
@@ -208,12 +233,21 @@ function logDebugToConsole(
   // eslint-disable-next-line no-console
   console.groupCollapsed(`Jinjaboard: ${template} (${info.duration_ms}ms)`);
   console.log(resultLabel, selectDebugSubtree(fullConfig, outputPath));
-  // The label and the raw text are one log call, joined by "\n" (not the
-  // usual `console.log(label, value)` two-arg form used elsewhere in this
-  // function) so the often-multi-line raw YAML text always starts on its
-  // own line below the label, instead of running on right after it.
-  console.log(`Raw root template output:\n${info.raw_root_text}`);
-  console.log("Included files:", info.include_paths);
+
+  // No path filter: show every touched file, since there's no specific
+  // subtree to narrow to. A path filter resolves each requested path to
+  // its origin file and shows only those, deduped — e.g. two cards from
+  // the same include only log that file once.
+  const requestedPaths: string[] =
+    typeof outputPath === "string" ? [outputPath] : Array.isArray(outputPath) ? outputPath : [];
+  const filePaths =
+    outputPath === true || outputPath === undefined
+      ? Object.keys(info.raw_texts)
+      : Array.from(new Set(requestedPaths.map((path) => resolveOrigin(path, info.origins, info.root_path))));
+  for (const path of filePaths) {
+    if (path in info.raw_texts) logRawText(path, info.raw_texts[path], info.root_path);
+  }
+
   console.groupEnd();
 }
 

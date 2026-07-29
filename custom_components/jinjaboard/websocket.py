@@ -25,6 +25,35 @@ from .template_engine import (
 _RAW_OUTPUT_PREVIEW_CHARS = 500
 
 
+def _walk_origins(
+    node: Any, dot_path: str, origin_by_id: dict[int, str], out: dict[str, str]
+) -> None:
+    """Flatten `debug_trace["origin_by_id"]` (a Python-object-identity map
+    built while parsing, in `includes.py::_render_included_file`) into a
+    dot-path -> origin-file map over the *final* parsed `result` — this can
+    only happen here, after `render_template` returns but before the result
+    is JSON-serialized for `send_result`, since object identity doesn't
+    survive serialization. Recurses into every node regardless of whether
+    it matched, so a deeper nested include produces its own, more specific
+    entry alongside its ancestor's — `strategy-common.ts`'s `resolveOrigin`
+    picks the most specific one for a given output path."""
+    if id(node) in origin_by_id:
+        out[dot_path] = origin_by_id[id(node)]
+    if isinstance(node, dict):
+        for key, value in node.items():
+            _walk_origins(
+                value, f"{dot_path}.{key}" if dot_path else str(key), origin_by_id, out
+            )
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            _walk_origins(
+                value,
+                f"{dot_path}.{index}" if dot_path else str(index),
+                origin_by_id,
+                out,
+            )
+
+
 @callback
 def async_setup_websocket_api(hass: HomeAssistant) -> None:
     """Register the jinjaboard/render WebSocket command."""
@@ -188,14 +217,17 @@ async def handle_render(
 
     if debug_requested:
         duration_ms = round((time.monotonic() - render_started) * 1000, 1)
+        origins: dict[str, str] = {}
+        _walk_origins(result, "", debug_trace.get("origin_by_id", {}), origins)
         connection.send_result(
             msg["id"],
             {
                 "config": result,
                 "debug": {
                     "duration_ms": duration_ms,
-                    "raw_root_text": debug_trace.get("raw_root_text", ""),
-                    "include_paths": debug_trace.get("include_paths", []),
+                    "root_path": debug_trace.get("root_path", ""),
+                    "raw_texts": debug_trace.get("raw_texts", {}),
+                    "origins": origins,
                 },
             },
         )
