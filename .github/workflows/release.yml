@@ -182,11 +182,9 @@ jobs:
 
       - name: Build the frontend bundle
         working-directory: src
-        env:
-          NODE_ENV: production
         run: |
           npm ci
-          npm run build
+          NODE_ENV=production npm run build
 
       - name: Zip the jinjaboard component
         # HACS zip-release convention: the asset must be named
