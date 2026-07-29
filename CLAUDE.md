@@ -372,7 +372,8 @@ both `websocket.py`'s schema and `src/types.ts`'s `RenderRequest`/
 `StrategyConfig`. Unlike those, it changes the **response** shape
 conditionally: `connection.send_result` sends the bare parsed config
 exactly as before when `debug` is absent/falsy, but `{"config": <parsed
-config>, "debug": {duration_ms, root_path, raw_texts, origins}}` when it
+config>, "debug": {duration_ms, root_path, raw_texts, include_vars,
+origins}}` when it
 was honored — so `src/strategy-common.ts`'s `createStrategyGenerate` must
 runtime-check the actual response shape (`isDebugEnvelope`) rather than
 assume the wrapped shape just because it asked for one. That's necessary
@@ -406,6 +407,19 @@ choice, not a limitation. The root call is told apart from a nested one by
 checking whether `"root_path"` is already present in the trace dict at
 entry, since the root always sets it (once) before any nested include gets
 parsed.
+
+`include_vars` is collected at the same point as `raw_texts` (same
+`_render_and_parse` call, keyed the same way) — it's the *effective*
+`inc_vars` param already threaded through every call for `jjb.inc`, kept
+in the trace whenever it's non-empty. "Effective" matters here: `inc_vars`
+is whatever `_render_included_file` layered on top of what it itself
+inherited (see the "Includes" section below), so a grandchild `!include`
+with no `vars:` of its own still shows its ancestor's — this is exactly
+what `jjb.inc` resolves to inside that file, not just what was written at
+that one include line, which is the more useful thing to show alongside
+that file's raw text in the `debug:` console output. Root is never a key
+here since `render_template` always calls `_render_and_parse` with
+`inc_vars=None` for the root.
 
 **`origins`: attributing a parsed-result path back to its source file.**
 The parsed result and the raw text serve different purposes — the parsed

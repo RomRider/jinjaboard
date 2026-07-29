@@ -197,7 +197,13 @@ describe("createStrategyGenerate", () => {
       const config = { views: [] };
       const wsResult = {
         config,
-        debug: { duration_ms: 5, root_path: "home.yaml.j2", raw_texts: { "home.yaml.j2": "x" }, origins: {} },
+        debug: {
+          duration_ms: 5,
+          root_path: "home.yaml.j2",
+          raw_texts: { "home.yaml.j2": "x" },
+          include_vars: {},
+          origins: {},
+        },
       };
       const generate = createStrategyGenerate(vi.fn());
       vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
@@ -221,6 +227,7 @@ describe("createStrategyGenerate", () => {
           duration_ms: 5,
           root_path: "home.yaml.j2",
           raw_texts: { "home.yaml.j2": "raw text", "a.yaml.j2": "include text" },
+          include_vars: { "a.yaml.j2": { area_id: "kitchen" } },
           origins: {},
         },
       };
@@ -237,6 +244,10 @@ describe("createStrategyGenerate", () => {
       expect(log).toHaveBeenCalledWith("raw text");
       expect(groupCollapsed).toHaveBeenCalledWith("Raw template output: a.yaml.j2");
       expect(log).toHaveBeenCalledWith("include text");
+      // The root has no entry in `include_vars` (it never has `inc_vars`),
+      // so "Vars:" is only logged for the included file that has one.
+      expect(log).toHaveBeenCalledWith("Vars:", { area_id: "kitchen" });
+      expect(log).toHaveBeenCalledTimes(4); // Result, root text, include text, Vars
       expect(groupEnd).toHaveBeenCalled();
 
       groupCollapsed.mockRestore();
@@ -248,7 +259,7 @@ describe("createStrategyGenerate", () => {
       const config = { views: [{ cards: ["a", "b"] }] };
       const wsResult = {
         config,
-        debug: { duration_ms: 1, root_path: "home.yaml.j2", raw_texts: {}, origins: {} },
+        debug: { duration_ms: 1, root_path: "home.yaml.j2", raw_texts: {}, include_vars: {}, origins: {} },
       };
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
@@ -269,7 +280,7 @@ describe("createStrategyGenerate", () => {
       const config = { views: [{ cards: ["a", "b"] }] };
       const wsResult = {
         config,
-        debug: { duration_ms: 1, root_path: "home.yaml.j2", raw_texts: {}, origins: {} },
+        debug: { duration_ms: 1, root_path: "home.yaml.j2", raw_texts: {}, include_vars: {}, origins: {} },
       };
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
@@ -297,6 +308,7 @@ describe("createStrategyGenerate", () => {
           duration_ms: 1,
           root_path: "home.yaml.j2",
           raw_texts: { "home.yaml.j2": "root text", "cards/light.yaml.j2": "card text" },
+          include_vars: {},
           origins: { "views.0.cards.0": "cards/light.yaml.j2" },
         },
       };
@@ -326,6 +338,7 @@ describe("createStrategyGenerate", () => {
           duration_ms: 1,
           root_path: "home.yaml.j2",
           raw_texts: { "home.yaml.j2": "root text" },
+          include_vars: {},
           origins: {},
         },
       };
@@ -353,6 +366,7 @@ describe("createStrategyGenerate", () => {
           duration_ms: 1,
           root_path: "home.yaml.j2",
           raw_texts: { "home.yaml.j2": "root text", "cards/light.yaml.j2": "light card text" },
+          include_vars: {},
           origins: {
             "views.0.cards.0": "cards/light.yaml.j2",
             "views.0.cards.1": "cards/light.yaml.j2",

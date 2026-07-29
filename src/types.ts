@@ -58,6 +58,15 @@ export interface JinjaboardDebugInfo {
    */
   raw_texts: Record<string, string>;
   /**
+   * The effective `!include ... vars:` in scope for each file that has
+   * any (i.e. exactly what `jjb.inc` resolves to inside it, including
+   * anything inherited from an ancestor include's own `vars:`) — keyed by
+   * display path like `raw_texts`, root never present since it never has
+   * `inc_vars`. A file `!include`d more than once keeps only its last
+   * occurrence's vars.
+   */
+  include_vars: Record<string, Record<string, unknown>>;
+  /**
    * Maps a dot-path into the parsed result (e.g. `"views.2.cards.0"`) to
    * the display path of the file that subtree came from, for every part
    * of the result that originated from an `!include` whose resolved value

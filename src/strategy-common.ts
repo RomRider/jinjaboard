@@ -215,10 +215,14 @@ function resolveOrigin(path: string, origins: Record<string, string>, rootPath: 
   return rootPath;
 }
 
-function logRawText(path: string, text: string, rootPath: string): void {
+function logRawText(path: string, text: string, rootPath: string, vars: Record<string, unknown> | undefined): void {
   // eslint-disable-next-line no-console
   console.groupCollapsed(path === rootPath ? "Raw template output (root)" : `Raw template output: ${path}`);
   console.log(text);
+  // Root is never included in `include_vars` (it never has `inc_vars`),
+  // and a file `!include`d without a `vars:` mapping has no entry either
+  // — only shown when there's actually something to show.
+  if (vars) console.log("Vars:", vars);
   console.groupEnd();
 }
 
@@ -245,7 +249,7 @@ function logDebugToConsole(
       ? Object.keys(info.raw_texts)
       : Array.from(new Set(requestedPaths.map((path) => resolveOrigin(path, info.origins, info.root_path))));
   for (const path of filePaths) {
-    if (path in info.raw_texts) logRawText(path, info.raw_texts[path], info.root_path);
+    if (path in info.raw_texts) logRawText(path, info.raw_texts[path], info.root_path, info.include_vars[path]);
   }
 
   console.groupEnd();

@@ -1,4 +1,5 @@
 strategy:
   type: custom:jinjaboard
   template: test/jinjaboard/includes/root_include.yaml.j2
-  debug: true
+  debug:
+    - views.0.cards.1

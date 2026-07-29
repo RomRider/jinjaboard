@@ -477,6 +477,13 @@ If a selected path's content lives directly in the root template rather
 than an `!include`d file, the root's raw output is shown instead — there's
 always a fallback, never an empty result.
 
+If an `!include`d file's raw output group is shown and that include used
+`vars:` (`!include {path: ..., vars: {...}}`), a `Vars:` entry is logged
+right alongside its raw text — the *effective* vars, i.e. exactly what
+`jjb.inc` resolves to inside that file, including anything inherited from
+an ancestor include's own `vars:` if this one didn't set its own. The root
+never has one, since it never has `!include ... vars:` of its own.
+
 Two edge cases are worth knowing about:
 - A file `!include`d whose entire content is a single bare value (e.g. just
   a string or number, not a mapping/list) can't be matched back to a

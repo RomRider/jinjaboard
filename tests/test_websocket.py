@@ -433,6 +433,64 @@ async def test_render_debug_scalar_include_has_no_origin_entry(
     assert debug["raw_texts"]["scalar.yaml.j2"] == "hello"
 
 
+async def test_render_debug_include_vars_for_mapping_form_include(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("greeting.yaml.j2", "value: \"Hi {{ jjb.inc.area_id }}\"\n")
+    write_template(
+        "root.yaml.j2",
+        "cards: !include {path: greeting.yaml.j2, vars: {area_id: kitchen}}\n",
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    debug = response["result"]["debug"]
+    assert debug["include_vars"]["greeting.yaml.j2"] == {"area_id": "kitchen"}
+    assert "root.yaml.j2" not in debug["include_vars"]
+
+
+async def test_render_debug_include_vars_absent_for_include_without_vars(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    write_template("included.yaml.j2", "ok: true\n")
+    write_template("root.yaml.j2", "cards: !include included.yaml.j2\n")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    debug = response["result"]["debug"]
+    assert "included.yaml.j2" not in debug["include_vars"]
+
+
+async def test_render_debug_include_vars_inherited_by_grandchild(
+    hass: HomeAssistant, config_entry, hass_ws_client, write_template
+) -> None:
+    """A grandchild `!include` with no `vars:` of its own still inherits
+    the ancestor's — `include_vars` should reflect the *effective* value
+    (what `jjb.inc` actually resolves to inside that file), not just
+    whatever was explicitly passed at that one include line."""
+    write_template("leaf.yaml.j2", "value: \"{{ jjb.inc.area_id }}\"\n")
+    write_template("wrapper.yaml.j2", "nested: !include leaf.yaml.j2\n")
+    write_template(
+        "root.yaml.j2",
+        "cards: !include {path: wrapper.yaml.j2, vars: {area_id: kitchen}}\n",
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "jinjaboard/render", "template": "root.yaml.j2", "debug": True}
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    debug = response["result"]["debug"]
+    assert debug["include_vars"]["wrapper.yaml.j2"] == {"area_id": "kitchen"}
+    assert debug["include_vars"]["leaf.yaml.j2"] == {"area_id": "kitchen"}
+
+
 async def test_render_debug_string_path_ignored_by_backend(
     hass: HomeAssistant, config_entry, hass_ws_client, write_template
 ) -> None:

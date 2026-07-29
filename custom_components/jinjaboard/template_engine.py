@@ -410,14 +410,19 @@ def _render_and_parse(
 
     `debug_trace`, when not `None`, is mutated in place to collect data for
     the `debug:` WS response envelope (see `websocket.py::handle_render`):
-    `"root_path"` (the root file's own display path, set exactly once) and
+    `"root_path"` (the root file's own display path, set exactly once),
     `"raw_texts"` (every touched file's post-Jinja/pre-YAML text, root
-    included, keyed by display path — root excluded, or a file `!include`d
-    more than once, discarded in favor of that entry's own key). Whether
-    *this* call is the root or a nested include is told apart by whether
-    `"root_path"` is already present at entry — the root's own call always
-    sets it (right below) before any nested include is parsed, since that
-    only happens inside `parse_with_includes`, called after.
+    included, keyed by display path), and `"include_vars"` (the effective
+    `inc_vars` — i.e. exactly what `jjb.inc` resolves to inside that file,
+    inherited vars from an ancestor `!include ... vars:` included — for
+    every file whose `inc_vars` is non-empty, keyed the same way; root is
+    never present here since it never has `inc_vars`). A file `!include`d
+    more than once (with different `vars:`, say) only keeps its last
+    occurrence's entry in either map. Whether *this* call is the root or a
+    nested include is told apart by whether `"root_path"` is already
+    present at entry — the root's own call always sets it (right below)
+    before any nested include is parsed, since that only happens inside
+    `parse_with_includes`, called after.
     """
     display_path = _debug_display_path(hass, path)
     if debug_trace is not None and "root_path" not in debug_trace:
@@ -428,6 +433,8 @@ def _render_and_parse(
     )
     if debug_trace is not None:
         debug_trace.setdefault("raw_texts", {})[display_path] = raw
+        if inc_vars:
+            debug_trace.setdefault("include_vars", {})[display_path] = inc_vars
 
     try:
         return parse_with_includes(

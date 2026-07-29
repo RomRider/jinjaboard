@@ -227,6 +227,7 @@ async def handle_render(
                     "duration_ms": duration_ms,
                     "root_path": debug_trace.get("root_path", ""),
                     "raw_texts": debug_trace.get("raw_texts", {}),
+                    "include_vars": debug_trace.get("include_vars", {}),
                     "origins": origins,
                 },
             },
