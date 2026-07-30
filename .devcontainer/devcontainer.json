@@ -7,13 +7,10 @@
     "${localEnv:HA_DEBUGPY:5678}:5678"
   ],
   "mounts": [
-    "source=${localWorkspaceFolder},target=/config/www/workspace,type=bind",
-    "source=${localWorkspaceFolder}/.devcontainer/test,target=/config/test,type=bind",
-    "source=${localWorkspaceFolder}/.devcontainer/test/configuration.yaml,target=/config/configuration.yaml,type=bind",
-    "source=${localWorkspaceFolder}/custom_components/jinjaboard,target=/config/custom_components/jinjaboard,type=bind",
     "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
     "source=ha-storage-${devcontainerId},target=/config/.storage,type=volume"
   ],
+  "postCreateCommand": "bash .devcontainer/setup-container-symlinks.sh ${containerWorkspaceFolder}",
   "postStartCommand": "bash .devcontainer/persist-claude.sh && bash .devcontainer/install-deps.sh",
   "customizations": {
     "vscode": {
