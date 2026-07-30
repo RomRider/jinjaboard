@@ -384,7 +384,7 @@ A few things worth knowing:
   ones above calls it, every line of the result after the first is
   reindented to line up under that call site, so it nests into the
   surrounding YAML correctly regardless of how deep `cards:` happens to be
-  at the call site. This only applies to a line that's *entirely* one
+  at the call site. This only applies to a line that's _entirely_ one
   expression (an optional prefix like `- `, then `{{ ... }}`, then nothing
   but whitespace) — a line mixing literal text and expressions, e.g.
   `content: "Room: {{ a }}, {{ b }}"`, is unaffected, same as always.
@@ -610,9 +610,9 @@ If you're coming from `hass-lovelace_gen`, two things work differently:
 
   # JinjaBoard
   - !include
-    path: cards/light.yaml
-    vars:
-      area_id: kitchen
+      path: cards/light.yaml
+      vars:
+        area_id: kitchen
   ```
 
   Inside the included file, read the value as `{{ jjb.inc.area_id }}` rather
