@@ -198,3 +198,34 @@ def test_macro_syntax_error_names_the_file(hass: HomeAssistant, write_template) 
     # traceback is explicitly re-mapped back to template-source line numbers
     # first (see `_compile_macro_module_on_loop`'s docstring).
     assert excinfo.value.line == 2
+
+
+def test_cross_file_macro_call_is_reindented(hass: HomeAssistant, write_template) -> None:
+    """`jjb.macros.<name>(...)` calls go through the same standalone-
+    expression reindent as an inline `{% macro %}` — the macro *body* is
+    compiled from a separate file (`_compile_macro_module_on_loop`), but
+    the *call site* line still lives in the root/`!include`d file rendered
+    by `_render_jinja_on_loop`, so multi-line output must nest correctly
+    there too."""
+    write_template(
+        "macros/common.yaml.j2",
+        "{% macro card(title) %}\n"
+        "- type: markdown\n"
+        "  content: |\n"
+        "    {{ title }}\n"
+        "{% endmacro %}\n",
+    )
+    root = write_template(
+        "root.yaml.j2",
+        "cards:\n"
+        "  - type: markdown\n"
+        "    content: existing\n"
+        "  {{ jjb.macros.card('hi') }}\n",
+    )
+    result = _render(hass, root, macro_paths=["macros/common.yaml.j2"])
+    assert result == {
+        "cards": [
+            {"type": "markdown", "content": "existing"},
+            {"type": "markdown", "content": "hi"},
+        ]
+    }

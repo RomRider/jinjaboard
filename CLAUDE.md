@@ -240,6 +240,41 @@ Three more deliberate departures from the obvious approach, all load-bearing:
   apart from one inside a quoted scalar (`key: "a # b"`) needs real YAML
   parsing.
 
+- A standalone `{{ expr }}` line (an arbitrary prefix like a YAML `- `
+  marker or plain whitespace, exactly one expression, then nothing but
+  trailing whitespace — see `_STANDALONE_EXPR_RE`) has its expression
+  rewritten to `{{ (expr) | string | indent(N) }}` before Jinja renders it,
+  where `N` is the column `{{` starts at (`_reindent_standalone_expressions`,
+  applied at the same choke point as comment-blanking, right after it).
+  Jinja itself never reindents a multi-line expression result to match its
+  call site — only the *first* line inherits the raw prefix already on that
+  source line; every later line keeps whatever literal indentation was
+  written inside the expression's own source (a `{% macro %}` body has no
+  call site of its own, so it's always written starting at column 0).
+  Splicing that unmodified into an indented YAML structure produces lines
+  that no longer nest under their intended parent: this broke YAML parsing
+  outright for a real macro call (`hello.yaml.j2`'s `test(...)` card) and,
+  less obviously, silently produced a *wrong but still parseable* result for
+  this project's own once-shipped `light_tile` README example, which had
+  been suffering from exactly this the whole time it was documented as
+  working "out of the box". `indent`'s own defaults (`first=False`,
+  `blank=False`) are exactly what's needed — the first line already gets
+  its prefix for free from the surrounding template text, and blank lines
+  shouldn't gain trailing whitespace. `| string` is required, not cosmetic:
+  `indent`'s implementation does `s += "\n"` internally, which raises for
+  anything that isn't already a `str`, whereas an ordinary `{{ expr }}` (no
+  `indent` involved) never required `expr` to be a string — Jinja's output
+  writer stringifies implicitly. Without it, a standalone
+  `{{ jjb.user.is_admin }}` (a bare `bool`) would have newly broken. The
+  whole rewrite is a no-op for a single-line result, so it's safe to apply
+  unconditionally to every matching line rather than only ones known in
+  advance to be macro calls. Lines inside a `{% raw %}...{% endraw %}` block
+  are tracked and skipped entirely (same line-scanning approach comment-
+  blanking uses for block-scalar state) — `{{ x }}` in there is literal
+  output text Jinja itself never evaluates, and rewriting it before Jinja
+  even sees `source` would corrupt exactly the content `raw` exists to
+  protect.
+
 ### Path resolution (`path_guard.py`)
 
 Every template/include path is relative to `hass.config.config_dir` (the

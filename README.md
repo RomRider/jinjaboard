@@ -372,11 +372,22 @@ can call it:
 ```yaml
 views:
   - title: Home
-    cards: { { jjb.macros.light_tile('light.kitchen') } }
+    cards:
+      {{ jjb.macros.light_tile('light.kitchen') }}
 ```
 
 A few things worth knowing:
 
+- **A macro's multi-line output is automatically reindented to its call
+  site.** A macro body is always written starting at column 0 — it has no
+  call site of its own — but when a standalone `{{ ... }}` line like the
+  ones above calls it, every line of the result after the first is
+  reindented to line up under that call site, so it nests into the
+  surrounding YAML correctly regardless of how deep `cards:` happens to be
+  at the call site. This only applies to a line that's *entirely* one
+  expression (an optional prefix like `- `, then `{{ ... }}`, then nothing
+  but whitespace) — a line mixing literal text and expressions, e.g.
+  `content: "Room: {{ a }}, {{ b }}"`, is unaffected, same as always.
 - **A macro file only sees `jjb.globals`, never `jjb.inc`.** Macro files are
   compiled once, up front, before any `!include` is walked, so there's no
   tree position to give it an `jjb.inc` value for — referencing
@@ -458,7 +469,7 @@ strategy:
 ```
 
 Set `debug` to a dot-separated path instead of `true` to narrow the logged
-*parsed result* to one subtree, **and** narrow the raw output shown to just
+_parsed result_ to one subtree, **and** narrow the raw output shown to just
 the file that subtree actually came from — useful once a dashboard has
 grown large enough, or split across enough included files, that dumping
 everything is unwieldy. Numeric segments index into a list, and a list of
@@ -469,7 +480,7 @@ strategy:
   type: custom:jinjaboard
   template: dashboards/home.yaml.j2
   debug:
-    - "views.2.cards.0"   # only this one card's config + source file is logged
+    - "views.2.cards.0" # only this one card's config + source file is logged
     - "views.0.cards.1"
 ```
 
@@ -505,12 +516,13 @@ kind of entry resolves to.
 
 If an `!include`d file's raw output group is shown and that include used
 `vars:` (`!include {path: ..., vars: {...}}`), a `Vars:` entry is logged
-right alongside its raw text — the *effective* vars, i.e. exactly what
+right alongside its raw text — the _effective_ vars, i.e. exactly what
 `jjb.inc` resolves to inside that file, including anything inherited from
 an ancestor include's own `vars:` if this one didn't set its own. The root
 never has one, since it never has `!include ... vars:` of its own.
 
 Two edge cases are worth knowing about:
+
 - A file `!include`d whose entire content is a single bare value (e.g. just
   a string or number, not a mapping/list) can't be matched back to a
   specific path in the parsed result, so a `debug` path pointing at it

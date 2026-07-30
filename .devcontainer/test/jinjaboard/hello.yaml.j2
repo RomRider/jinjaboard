@@ -1,14 +1,27 @@
+{% macro test(title) %}
+type: markdown
+content: |
+  # {{ title }}
+  This is a test to validate auto-indentation in expressions.
+
 views:
   - title: JinjaBoard Test
     cards:
       {% for i in [1,2,3] %}
       - type: markdown
         content: "Hello from {{ 'Jinja' + 'Board' }}!"
+      - type: markdown
+        content: |
+          {% raw -%}
+          Test Auto-indent not applied in RAW Block
+          {{ 'Test' }}
+          {% endraw -%}
       {% endfor %}
       {% for room in jjb.globals.rooms %}
       - type: markdown
         content: "Room: {{ room.name }}, Temperature: {{ room.temperature }}°C"
       {% endfor %}
+      - {{ test('Macro Test') }}
   - title: Client Context
     icon: mdi:account-badge-outline
     cards:

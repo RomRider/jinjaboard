@@ -204,6 +204,136 @@ def test_hash_inside_sequence_entry_block_scalar_is_not_treated_as_comment(
     assert result == {"cards": ["# Heading\nSome text"]}
 
 
+def test_standalone_multiline_macro_call_is_reindented(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A `{% macro %}` body is always written starting at column 0 (it has
+    no call site of its own) — calling it from a standalone
+    `{{ macro(...) }}` line further down the same file used to splice that
+    column-0 text in unmodified past the first line, breaking the YAML
+    structure it was meant to nest under. This is the exact shape of the
+    bug reported against `.devcontainer/test/jinjaboard/hello.yaml.j2`."""
+    path = write_template(
+        "hello.yaml.j2",
+        "{% macro card(title) %}\n"
+        "- type: markdown\n"
+        "  content: |\n"
+        "    # {{ title }}\n"
+        "    second line\n"
+        "{% endmacro %}\n"
+        "views:\n"
+        "  - title: Home\n"
+        "    cards:\n"
+        "      - type: markdown\n"
+        "        content: existing\n"
+        "      {{ card('Macro Test') }}\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {
+        "views": [
+            {
+                "title": "Home",
+                "cards": [
+                    {"type": "markdown", "content": "existing"},
+                    {
+                        "type": "markdown",
+                        "content": "# Macro Test\nsecond line",
+                    },
+                ],
+            }
+        ]
+    }
+
+
+def test_standalone_macro_call_as_sequence_marker_is_reindented(
+    hass: HomeAssistant, write_template
+) -> None:
+    """`{{ macro(...) }}` used directly as the `- ` sequence marker itself
+    (rather than after an existing `- `) must reindent continuation lines
+    to the column right after `- `, not to the column of the dash."""
+    path = write_template(
+        "hello.yaml.j2",
+        "{% macro card(title) %}\n"
+        "- type: markdown\n"
+        "  content: |\n"
+        "    {{ title }}\n"
+        "{% endmacro %}\n"
+        "cards:\n"
+        "  {{ card('hi') }}\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"cards": [{"type": "markdown", "content": "hi"}]}
+
+
+def test_standalone_non_string_expression_still_renders(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A standalone `{{ expr }}` line whose value isn't already a `str`
+    (e.g. a bare `bool`) must keep working — `indent`'s own implementation
+    requires a `str` input, so the reindent rewrite must coerce to string
+    first rather than newly breaking non-string standalone expressions."""
+    path = write_template(
+        "flags.yaml.j2",
+        "flag:\n"
+        "  {{ jjb.globals.enabled }}\n",
+    )
+    result = render_template(hass, path, path.read_text(), global_vars={"enabled": True})
+    assert result == {"flag": True}
+
+
+def test_multiple_expressions_on_one_line_are_left_untouched(
+    hass: HomeAssistant, write_template
+) -> None:
+    """A line mixing literal text with more than one expression isn't
+    shaped like a macro call site at all, and must render exactly as
+    before this feature existed."""
+    path = write_template(
+        "room.yaml.j2",
+        "content: \"Room: {{ jjb.globals.name }}, Temp: {{ jjb.globals.temp }}\"\n",
+    )
+    result = render_template(
+        hass, path, path.read_text(), global_vars={"name": "Kitchen", "temp": 21}
+    )
+    assert result == {"content": "Room: Kitchen, Temp: 21"}
+
+
+def test_raw_block_expression_is_not_reindented(
+    hass: HomeAssistant, write_template
+) -> None:
+    """`{% raw %}...{% endraw %}` is Jinja's own escape hatch for literal
+    `{{ }}` text — e.g. documentation showing Jinja syntax itself — and
+    must render completely unevaluated, not get rewritten into an
+    `| indent(...)` call by the standalone-expression reindent pass before
+    Jinja even sees it."""
+    path = write_template(
+        "docs.yaml.j2",
+        "content: |\n"
+        "  Example:\n"
+        "  {% raw %}\n"
+        "  {{ jjb.globals.name }}\n"
+        "  {% endraw %}\n",
+    )
+    result = render_template(hass, path, path.read_text(), global_vars={"name": "kitchen"})
+    assert result == {"content": "Example:\n\n{{ jjb.globals.name }}"}
+
+
+def test_raw_block_containing_dash_expression_is_not_reindented(
+    hass: HomeAssistant, write_template
+) -> None:
+    """Same as above but for the `- {{ ... }}` sequence-marker shape, to
+    make sure the raw-block guard applies regardless of what the
+    (unevaluated) literal text on that line looks like."""
+    path = write_template(
+        "docs.yaml.j2",
+        "content: |\n"
+        "  {% raw %}\n"
+        "  - {{ macro_call() }}\n"
+        "  {% endraw %}\n",
+    )
+    result = render_template(hass, path, path.read_text())
+    assert result == {"content": "\n- {{ macro_call() }}"}
+
+
 def test_trailing_inline_comment_is_left_untouched(
     hass: HomeAssistant, write_template
 ) -> None:

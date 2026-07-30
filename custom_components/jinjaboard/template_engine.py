@@ -135,6 +135,108 @@ def _blank_out_comment_lines(source: str) -> str:
     return "".join(out)
 
 
+# Matches a line that is *only* a single `{{ expr }}` expression (with an
+# arbitrary prefix before it, e.g. a YAML `- ` sequence marker, and nothing
+# but trailing whitespace after) — the shape a macro call or an `!include`-
+# style "whole value comes from this expression" line always has. The
+# lookaround pair around each `{{`/`}}` bails out (leaves the line untouched)
+# for Jinja's own `{{- -}}` whitespace-control markers, which this project's
+# own fixtures/tests/README never use — rather than risk mangling one.
+_STANDALONE_EXPR_RE = re.compile(
+    r"^(?P<prefix>[^\n]*?)\{\{(?!-)(?P<expr>(?:(?!\}\}).)*?)(?<!-)\}\}"
+    r"(?P<suffix>[ \t]*)$"
+)
+
+# `{% raw %}...{% endraw %}` is Jinja's own escape hatch for literal `{{ }}`/
+# `{% %}` text that must NOT be evaluated at all (e.g. documentation showing
+# Jinja syntax itself). These are matched with a plain substring search, not
+# anchored to a whole line, since unlike a macro call site there's no reason
+# to assume either tag sits alone on its own line.
+_RAW_OPEN_RE = re.compile(r"\{%-?\s*raw\s*-?%\}")
+_RAW_CLOSE_RE = re.compile(r"\{%-?\s*endraw\s*-?%\}")
+
+
+def _reindent_standalone_expressions(source: str) -> str:
+    """Rewrite a standalone `{{ expr }}` line so a multi-line `expr` result
+    lands reindented to the column that expression starts at, before Jinja
+    ever renders it.
+
+    Jinja does not do this itself: only the *first* line of a multi-line
+    expression result inherits the raw text already on that source line
+    before `{{` (e.g. the call site's own leading whitespace) — every
+    subsequent line keeps whatever literal indentation was written inside
+    the expression's own source (e.g. a `{% macro %}` body, always written
+    starting at column 0 since it has no "call site" of its own). Splicing
+    that unmodified into an indented YAML structure produces lines that no
+    longer nest under their intended parent — this was reproduced literally
+    breaking YAML parsing (`hello.yaml.j2`'s `test('Macro Test')` macro) and,
+    less obviously, silently producing a *wrong but still parseable* result
+    (this project's own README `light_tile` example, which turned out to
+    already suffer from exactly this before this function existed).
+
+    The fix is Jinja's own built-in `indent` filter, applied automatically:
+    `{{ expr }}` becomes `{{ (expr) | string | indent(N) }}`, where `N` is
+    the number of characters before `{{` on the source line — the same
+    column subsequent lines need to start at to nest correctly, whether
+    that prefix is plain whitespace or e.g. a `- ` sequence marker. The
+    `| string` is required, not cosmetic: `indent`'s own implementation
+    does `s += "\n"` internally, which raises `TypeError` for anything that
+    isn't already a `str` — but an ordinary `{{ expr }}` (with no `indent`
+    involved) never required `expr` to be a string, since Jinja's own
+    output writer stringifies whatever it gets. Without this, a standalone
+    `{{ jjb.user.is_admin }}` (a `bool`) or any other non-`str` expression
+    on its own line would newly break. `indent`'s own defaults (`first=False`,
+    i.e. don't touch the first line — it already gets that same prefix for
+    free, literally, from the surrounding template text; `blank=False`,
+    i.e. don't pad already-blank lines) are exactly what's wanted here.
+    This whole rewrite is a no-op for a single-line `expr` result (nothing
+    for `indent` to do past a lone first line, and `| string` matches
+    Jinja's own implicit stringification), so it's safe to apply
+    unconditionally to every matching line, not just ones that are known in
+    advance to be macro calls.
+
+    Only lines that are *entirely* one `{{ expr }}` (see `_STANDALONE_EXPR_RE`)
+    are rewritten — a line like `content: "Room: {{ a }}, {{ b }}°C"` isn't
+    shaped like a call site at all (multiple expressions, literal text
+    around them) and is left untouched, same as it always would be.
+
+    Lines inside a `{% raw %}...{% endraw %}` block are never rewritten,
+    tracked the same line-scanning way `_blank_out_comment_lines` tracks
+    block-scalar state: `{{ x }}` in there is literal output text Jinja
+    itself never evaluates as an expression at all, since that's the whole
+    point of `raw` — rewriting it here, before Jinja ever sees `source`,
+    would corrupt exactly the text `raw` exists to protect.
+    """
+    lines = source.splitlines(keepends=True)
+    out: list[str] = []
+    in_raw = False
+    for line in lines:
+        body = line.rstrip("\r\n")
+        ending = line[len(body):]
+
+        if in_raw:
+            out.append(line)
+            if _RAW_CLOSE_RE.search(body):
+                in_raw = False
+            continue
+
+        if _RAW_OPEN_RE.search(body) and not _RAW_CLOSE_RE.search(body):
+            out.append(line)
+            in_raw = True
+            continue
+
+        match = _STANDALONE_EXPR_RE.match(body)
+        if match is None:
+            out.append(line)
+            continue
+        width = len(match["prefix"])
+        out.append(
+            f"{match['prefix']}{{{{ ({match['expr']}) | string | indent({width}) }}}}"
+            f"{match['suffix']}{ending}"
+        )
+    return "".join(out)
+
+
 def _render_jinja(
     hass: HomeAssistant,
     source: str,
@@ -234,9 +336,15 @@ def _render_jinja_on_loop(
 
     `source` has whole-line YAML comments blanked out first (see
     `_blank_out_comment_lines`) so a commented-out line's `{{ }}`/`{% %}`
-    doesn't raise for code the author meant to disable.
+    doesn't raise for code the author meant to disable, and a standalone
+    `{{ macro_call(...) }}`-shaped line has its expression wrapped in
+    `| indent(N)` (see `_reindent_standalone_expressions`) so multi-line
+    macro output nests under its call site instead of falling back to
+    column 0.
     """
-    template = Template(_blank_out_comment_lines(source), hass)
+    template = Template(
+        _reindent_standalone_expressions(_blank_out_comment_lines(source)), hass
+    )
     try:
         return template.async_render(
             {
@@ -345,8 +453,17 @@ def _compile_macro_module_on_loop(
     which has no 1:1 relationship to the original source. Without this,
     the reported line number is silently wrong rather than merely absent —
     worse than not showing one at all.
+
+    Also goes through `_reindent_standalone_expressions`, same as
+    `_render_jinja_on_loop` — a macro body can itself call another declared
+    macro on a standalone line (e.g. a `card_row` macro looping over items
+    and calling a per-item macro), and that inner call site needs the same
+    treatment so the whole macro's output is internally consistent no
+    matter what column it's eventually spliced in at by an outer call.
     """
-    template = Template(_blank_out_comment_lines(source), hass)
+    template = Template(
+        _reindent_standalone_expressions(_blank_out_comment_lines(source)), hass
+    )
     try:
         compiled = template._ensure_compiled(strict=True)  # noqa: SLF001
         return compiled.make_module(
