@@ -19,7 +19,7 @@ from .errors import JinjaboardGlobalsError, JinjaboardTemplateError, JinjaboardY
 from .globals_file import resolve_global_vars
 from .includes import parse_with_includes
 from .macros import build_macro_namespace
-from .path_guard import config_relative_display_path
+from .path_guard import config_relative_display_path, normalize_path
 
 # Re-exported for websocket.py / callers that only need the exception types,
 # so most of the codebase can import them from here rather than .errors.
@@ -684,6 +684,6 @@ def render_template(
         macro_vars,
         user_vars,
         client_vars,
-        include_stack=[path.resolve()],
+        include_stack=[normalize_path(path)],
         debug_trace=debug_trace,
     )
