@@ -1,4 +1,4 @@
-# JinjaBoard
+# JinjaBoard <!-- omit from toc -->
 
 Author Home Assistant Lovelace dashboards as **YAML files with embedded
 Jinja2**, rendered live by Home Assistant's own template engine — the same
@@ -31,6 +31,26 @@ A few things people build with it (full versions in
   entity in one place.
 - A curated view driven by entity labels, re-organized from Home Assistant's
   UI instead of hand-edited YAML.
+
+## TOC <!-- omit from toc -->
+
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Authorizing template files](#authorizing-template-files)
+  - [1. Write a template](#1-write-a-template)
+  - [2. Create a dashboard that uses it](#2-create-a-dashboard-that-uses-it)
+  - [3. Use it as a view strategy](#3-use-it-as-a-view-strategy)
+  - [4. Use it as a section strategy](#4-use-it-as-a-section-strategy)
+  - [Keeping a card's own live templating](#keeping-a-cards-own-live-templating)
+  - [Splitting a dashboard across files](#splitting-a-dashboard-across-files)
+  - [Macros](#macros)
+  - [Who's viewing: `jjb.user` and `jjb.client`](#whos-viewing-jjbuser-and-jjbclient)
+  - [Debugging a template: `debug:`](#debugging-a-template-debug)
+- [Real-world examples](#real-world-examples)
+- [Migrating from lovelace\_gen](#migrating-from-lovelace_gen)
+- [Error handling](#error-handling)
+- [Development](#development)
+  - [Tests](#tests)
 
 ## Installation
 
@@ -372,8 +392,7 @@ can call it:
 ```yaml
 views:
   - title: Home
-    cards:
-      {{ jjb.macros.light_tile('light.kitchen') }}
+    cards: { { jjb.macros.light_tile('light.kitchen') } }
 ```
 
 A few things worth knowing:
@@ -610,9 +629,9 @@ If you're coming from `hass-lovelace_gen`, two things work differently:
 
   # JinjaBoard
   - !include
-      path: cards/light.yaml
-      vars:
-        area_id: kitchen
+    path: cards/light.yaml
+    vars:
+      area_id: kitchen
   ```
 
   Inside the included file, read the value as `{{ jjb.inc.area_id }}` rather
